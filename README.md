@@ -12,9 +12,12 @@ Notenkompass wurde ursprünglich für die Hessen-Abitur-Oberstufe (Abendschule) 
 - **Statistik-Werkzeuge**: Standardabweichung, Klausur-vs-Mündlich-Vergleich, Trendprognose (lineare Regression), Monte-Carlo-Simulation, Bootstrap-Konfidenzintervall, Korrelationsanalyse
 - **Optionales Abitur/Fachabi-Modul** mit Voreinstellungen für alle 16 Bundesländer: Block-I/II-Hochrechnung, LK-Gewichtung, Grenznutzen-Analyse, Einbringungs-Optimierer
 - **Optionaler Mittelstufen-Modus** für Haupt-/Realschule: Zeugnisdurchschnitt (Schulnoten 1–6) und vereinfachte Versetzungs-Einschätzung
+- **Zielnoten-Rechner**: Ziel pro Fach setzen, Rechner zeigt den nötigen Schnitt in den noch geplanten Prüfungen
+- **Optionaler Fehlstunden/Absenzen-Tracker**: entschuldigte/unentschuldigte/offene Fehlstunden pro Halbjahr erfassen
+- **GPA/internationale Notenskala (Näherung)**: Punkte/Noten als grobe US-GPA-Orientierung für Bewerbungen im Ausland
 - **Mehrere Profile**: getrennte Datensätze im selben Browser, z.B. für Geschwister
 - **PDF-Export**: wähle frei, was exportiert wird (automatisch generierter Analysebericht, Noten, Fächerübersicht, Statistik), gefiltert nach Halbjahr
-- **Datenportabilität**: Export als JSON-Datei (vollständige, wieder importierbare Sicherung) oder CSV (einzelne Noteneinträge für Excel & Co.)
+- **Datenportabilität**: Export als JSON-Datei (vollständige, wieder importierbare Sicherung), CSV (einzelne Noteneinträge für Excel & Co.) oder ICS (Klausurtermine für deinen Kalender)
 - **Dark Mode**
 - **100% lokal**: alle Daten liegen ausschließlich in deinem Browser (`localStorage`). Es gibt keinen Server und keine Übertragung an Dritte.
 
@@ -60,6 +63,22 @@ Wenn dich dieses Modell nicht betrifft (andere Schulform, oder du willst einfach
 ## Der Mittelstufen-Modus
 
 Alternative zum Abitur/Fachabi-Modul für Haupt-/Realschule oder die Mittelstufe allgemein, ebenfalls standardmäßig deaktiviert. Ist er aktiv, trägst du Noten direkt als Schulnote (1–6) ein statt als Notenpunkte (0–15) — intern wird daraus weiterhin ein Punktwert berechnet (für Statistik, Export und Farben), das bekommst du beim Eintragen aber nicht mehr zu sehen. Das Modul zeigt pro Fach die Schulnote sowie einen Zeugnisdurchschnitt und eine grobe Versetzungs-Einschätzung (basierend auf der verbreiteten Daumenregel "1× mangelhaft meist unproblematisch, 2× nur mit Ausgleich, 1× ungenügend oder 3×+ mangelhaft gefährdet"). Auch hier gilt: die echten Versetzungsordnungen unterscheiden sich nach Bundesland und Schulform — das Modul ersetzt keine verbindliche Auskunft deiner Schule.
+
+## Zielnoten-Rechner
+
+Im Tab "Zielnoten" kannst du pro Fach und Halbjahr eine Zielnote festlegen (bei aktivem Mittelstufen-Modus als Schulnote, sonst als Punktzahl). Der Rechner vergleicht sie mit deinem aktuellen Schnitt und zeigt an, welchen Durchschnitt du in den noch geplanten Prüfungen brauchst, um das Ziel zu erreichen – inklusive Hinweis, falls das rechnerisch nicht mehr möglich ist. **Hinweis:** Die Rechnung nutzt zur Vereinfachung einen einfachen Durchschnitt aller Noten (nicht die gewichtete Kategorien-Logik aus der restlichen App) und ersetzt keine verbindliche Einschätzung deiner Lehrkraft.
+
+## Fehlstunden/Absenzen-Tracker
+
+Optionales, standardmäßig deaktiviertes Modul (Einstellungen → Fehlstunden/Absenzen-Tracker). Aktiviert kannst du pro Halbjahr Fehlstunden mit Datum, Grund und Status (entschuldigt/unentschuldigt/offen) erfassen. Die App zeigt dir eine Übersicht mit Summen je Status – praktisch z.B. zur Vorbereitung auf ein Gespräch mit der Klassenleitung. Die Daten bleiben wie alle anderen Daten lokal und werden im JSON-Export mitgesichert.
+
+## GPA / internationale Notenskala (Näherung)
+
+In der Statistik (und im Abitur-Modul) wird neben den deutschen Noten zusätzlich eine grobe Näherung auf der 4,0-GPA-Skala angezeigt, wie sie in den USA und vielen internationalen Bewerbungsprozessen üblich ist. Berechnet wird sie über die offizielle KMK-Formel zur Umrechnung von Notenpunkten in Schulnoten (Note = (17 − Punkte) / 3) und anschließend die in der Praxis verbreitete Näherungsformel GPA = 5 − Note (für Noten schlechter als 4 wird der GPA auf 0 gesetzt). **Wichtig:** Das ist eine Näherung zur groben Orientierung (z.B. für eine Bewerbung im Ausland), keine offizielle oder verbindliche Umrechnung – Hochschulen und Bewerbungsportale nutzen teils eigene Verfahren. Verlass dich bei wichtigen Bewerbungen nicht allein auf diesen Wert, sondern informiere dich zusätzlich bei der jeweiligen Institution.
+
+## ICS-Kalender-Export
+
+In den Einstellungen lässt sich über "📅 Klausurtermine exportieren (ICS)" eine `.ics`-Datei mit allen erfassten Klausurterminen herunterladen. Die Datei kann in gängige Kalender-Apps importiert werden (Google Kalender, Apple Kalender, Outlook u.a.), sodass deine Klausurtermine dort automatisch als Termine auftauchen.
 
 ## Technik
 

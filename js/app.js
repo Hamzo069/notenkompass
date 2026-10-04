@@ -10,7 +10,7 @@ const TYPES = {
   muendlich:["Abfrage","Referat","Präsentation","Unterrichtsbeteiligung","Prüfungsgespräch"],
   sonstige:["Hausaufgaben","Projektarbeit","Portfolio","Protokoll","Facharbeit","Gruppenarbeit","Praktische Leistung"]
 };
-const TAB_TITLES = {overview:"Übersicht",klausuren:"Klausuren",muendlich:"Mündliche Noten",sonstige:"Sonstige Leistungen",abi:"Abitur/Fachabi-Modul",mittelstufe:"Mittelstufen-Modus",statistik:"Statistik & Analyse",faecher:"Einstellungen"};
+const TAB_TITLES = {overview:"Übersicht",klausuren:"Klausuren",muendlich:"Mündliche Noten",sonstige:"Sonstige Leistungen",ziele:"Zielnoten-Rechner",absenzen:"Fehlstunden/Absenzen",abi:"Abitur/Fachabi-Modul",mittelstufe:"Mittelstufen-Modus",statistik:"Statistik & Analyse",faecher:"Einstellungen"};
 
 /* ======================= Profile (mehrere Schüler/Datensätze im selben Browser) =======================
  * Jedes Profil hat seinen eigenen, isolierten Datensatz (Config, Fächer, Noten, Abi-Einstellungen).
@@ -156,7 +156,8 @@ function defaultConfig(){
     periods: [{id:"p1",label:"Periode 1"},{id:"p2",label:"Periode 2"}],
     abiturModuleEnabled: false,
     abiturModule: { bundesland:"HE", lkDoubleFromIndex: 2, fachabiPeriodsCount: 2, numLK: 2, numPruefungsfaecher: 5 },
-    mittelstufeModuleEnabled: false
+    mittelstufeModuleEnabled: false,
+    absenzenModuleEnabled: false
   };
 }
 function applyConfig(cfg){
@@ -238,6 +239,7 @@ let editState = null; // {cat, idx} während ein Eintrag bearbeitet wird
 let subjFilter = "alle"; // Fächer-Filter in den Kategorie-Ansichten
 let scenarioMode = false; // "Was-wäre-wenn" Modus in der Abi-Übersicht
 let scenarioVals = {}; // Hypothetische Werte, Key "Fach|Sem" -> Punkte (0-15)
+let zielPlanN = {}; // Zielnoten-Rechner: Key "Fach|Sem" -> Anzahl geplanter weiterer Prüfungen (nur UI-Zustand, nicht gespeichert)
 let bulkMode = false; // Mehrfach-Eintrag Modus in den Kategorie-Ansichten
 let pendingDelete = null; // {kind:'entry',cat,idx} / {kind:'subject',subj} / {kind:'period',sem} — ersetzt window.confirm (in Sandboxes oft blockiert)
 let toastMessage = null; // Ersetzt window.alert (siehe oben)
@@ -248,7 +250,16 @@ let exportModalOpen = false;
 let exportSelection = {bericht:true, noten:true, verlauf:true, abi:true, statistik:true};
 let exportSemesters = {};
 
-let data = {klausuren:[],muendlich:[],sonstige:[]};
+let data = {klausuren:[],muendlich:[],sonstige:[],absenzen:[],zielnoten:{}};
+/* Füllt bei älteren/unvollständigen gespeicherten Datensätzen fehlende Felder mit sinnvollen
+ * Defaults auf (z.B. wenn ein Export aus einer Vorversion ohne absenzen/zielnoten importiert wird). */
+function ensureDataDefaults(){
+  if(!Array.isArray(data.klausuren)) data.klausuren=[];
+  if(!Array.isArray(data.muendlich)) data.muendlich=[];
+  if(!Array.isArray(data.sonstige)) data.sonstige=[];
+  if(!Array.isArray(data.absenzen)) data.absenzen=[];
+  if(!data.zielnoten||typeof data.zielnoten!=="object") data.zielnoten={};
+}
 
 function setSyncStatus(text, isError){
   const el=document.getElementById("sync-status");
@@ -281,6 +292,7 @@ async function loadData(){
     const res=await window.storage.get(pKey("data"));
     if(res&&res.value) data=JSON.parse(res.value);
   }catch(e){ /* noch keine Daten gespeichert */ }
+  ensureDataDefaults();
 }
 async function loadSubjects(){
   try{
@@ -450,10 +462,12 @@ function renderSidebarNav(){
     {id:"overview",icon:"◈",label:"Übersicht"},
     {id:"klausuren",icon:"✎",label:"Klausuren"},
     {id:"muendlich",icon:"◎",label:"Mündlich"},
-    {id:"sonstige",icon:"◇",label:"Sonstige"}
+    {id:"sonstige",icon:"◇",label:"Sonstige"},
+    {id:"ziele",icon:"🎯",label:"Zielnoten"}
   ];
   if(CONFIG&&CONFIG.abiturModuleEnabled) items.push({id:"abi",icon:"🎓",label:"Abitur/Fachabi"});
   if(CONFIG&&CONFIG.mittelstufeModuleEnabled) items.push({id:"mittelstufe",icon:"🏫",label:"Mittelstufe"});
+  if(CONFIG&&CONFIG.absenzenModuleEnabled) items.push({id:"absenzen",icon:"🗓",label:"Absenzen"});
   items.push({id:"statistik",icon:"📊",label:"Statistik"});
   items.push({id:"faecher",icon:"⚙",label:"Einstellungen"});
   nav.innerHTML=items.map(it=>`<button class="nav-item${it.id===activeTab?" active":""}" onclick="switchTab('${it.id}')" id="nav-${it.id}"><span class="icon">${it.icon}</span> ${it.label}</button>`).join("");
@@ -484,6 +498,8 @@ function render(){
   if(activeTab==="overview") body=renderOverview();
   else if(activeTab==="abi"&&CONFIG&&CONFIG.abiturModuleEnabled) body=renderAbi();
   else if(activeTab==="mittelstufe"&&CONFIG&&CONFIG.mittelstufeModuleEnabled) body=renderMittelstufe();
+  else if(activeTab==="ziele") body=renderZiele();
+  else if(activeTab==="absenzen"&&CONFIG&&CONFIG.absenzenModuleEnabled) body=renderAbsenzen();
   else if(activeTab==="statistik") body=renderStatistik();
   else if(activeTab==="faecher") body=renderFaecher();
   else body=renderCategory(activeTab);
@@ -1091,6 +1107,25 @@ function schulnoteZuPunkte(n){
   return {1:14,2:11,3:8,4:5,5:2,6:0}[n] ?? null;
 }
 function isMittelstufe(){ return !!(CONFIG&&CONFIG.mittelstufeModuleEnabled); }
+/* Kontinuierliche Punkte(0-15)->Note(1-6)-Umrechnung nach der in der gymnasialen Oberstufe üblichen
+ * Formel Note=(17-Punkte)/3 (dieselbe Formel, die punkteToNote() oben für die Abitur-Gesamtpunktzahl
+ * verwendet, hier verallgemeinert auf eine einzelne 0-15-Skala). Wird für Zielnoten-Rechner und die
+ * GPA-Näherung genutzt, wo eine feinere Abstufung als die ganzzahlige Schulnote hilfreich ist. */
+function punkteZuKontinuierlicherNote(punkte){
+  if(punkte===null||punkte===undefined||isNaN(punkte)) return null;
+  let n=(17-punkte)/3;
+  if(n<1) n=1;
+  if(n>6) n=6;
+  return Math.round(n*10)/10;
+}
+/* "Modified Bavarian Formula" — gängige Näherung (u.a. von WES für deutsche Abschlüsse verwendet), um
+ * eine deutsche Note (1,0 beste .. 4,0 Bestehensgrenze) auf eine US-GPA-Skala (4,0 .. 0,0) abzubilden.
+ * Noten schlechter als 4,0 (nicht bestanden) ergeben GPA 0. Nur eine Näherung, keine offizielle Norm. */
+function noteToGPA(note){
+  if(note===null||note===undefined||isNaN(note)) return null;
+  if(note>4) return 0;
+  return Math.round((5-note)*100)/100;
+}
 /* Liest ein Noten-Eingabefeld abhängig vom aktiven Modus: im Mittelstufen-Modus wird der
  * eingegebene Wert (1-6) als Schulnote interpretiert und in den internen Punktwert umgerechnet,
  * sonst wird der Wert direkt als Punkte (0-15) übernommen. */
@@ -1239,8 +1274,9 @@ function renderAbi(){
       <div class="metric"><div class="metric-label">Block II (Abiturprüfung, max. 300)</div><div class="metric-value">${bii.blockII!==null?bii.blockII:"—"} <span style="font-size:11px;color:var(--text-muted)">(${bii.count}/${CONFIG.abiturModule.numPruefungsfaecher||abiSettings.block2.length} eingetragen)</span></div></div>
       <div class="metric"><div class="metric-label">Gesamtpunktzahl (max. 900)</div><div class="metric-value">${gesamt!==null?gesamt:"—"}</div></div>
       <div class="metric"><div class="metric-label">Voraussichtliche Note</div><div class="metric-value" style="color:${note!==null?scoreColor(note<=2.5?13:note<=4?9:2).fg:"var(--text)"}">${note!==null?note.toFixed(1):"—"}</div></div>
+      <div class="metric"><div class="metric-label">≈ US-GPA (Näherung)</div><div class="metric-value">${note!==null?noteToGPA(note).toFixed(2):"—"}</div></div>
     </div>
-    <p style="font-size:11px;color:var(--text-muted);margin:-12px 0 20px">Bestanden ab 300 Gesamtpunkten (mind. 200 in Block I, 100 in Block II). 1,0 ab 823 Punkten.</p>`;
+    <p style="font-size:11px;color:var(--text-muted);margin:-12px 0 20px">Bestanden ab 300 Gesamtpunkten (mind. 200 in Block I, 100 in Block II). 1,0 ab 823 Punkten. Die GPA-Spalte ist eine Näherung nach der <em>Modified Bavarian Formula</em> für internationale Bewerbungen, keine offizielle Umrechnung.</p>`;
   }
 
   if(abiSettings.ziel==="fachabi"||abiSettings.ziel==="beide"){
@@ -1251,8 +1287,9 @@ function renderAbi(){
     <div class="metrics">
       <div class="metric"><div class="metric-label">Ø Punkte über alle Halbjahre</div><div class="metric-value">${fmt(fAvg)}</div></div>
       <div class="metric"><div class="metric-label">Geschätzte Note</div><div class="metric-value">${fNote!==null?fNote.toFixed(1):"—"}</div></div>
+      <div class="metric"><div class="metric-label">≈ US-GPA (Näherung)</div><div class="metric-value">${fNote!==null?noteToGPA(fNote).toFixed(2):"—"}</div></div>
     </div>
-    <p style="font-size:11px;color:var(--text-muted);margin:-12px 0 20px">Für die volle Fachhochschulreife kommt zusätzlich der berufsbezogene Teil (z.B. Praktikum) hinzu, der hier nicht erfasst wird.</p>`;
+    <p style="font-size:11px;color:var(--text-muted);margin:-12px 0 20px">Für die volle Fachhochschulreife kommt zusätzlich der berufsbezogene Teil (z.B. Praktikum) hinzu, der hier nicht erfasst wird. Die GPA-Spalte ist eine Näherung nach der <em>Modified Bavarian Formula</em>, keine offizielle Umrechnung.</p>`;
   }
 
   h+=`<div class="form-section">
@@ -1328,6 +1365,174 @@ function renderMittelstufe(){
   </div>`;
 
   return h;
+}
+
+/* ======================= Zielnoten-Rechner ======================= */
+/* Vereinfachtes Modell: zählt für das aktuelle Halbjahr alle Klausuren/mündlichen/sonstigen Noten
+ * eines Fachs flach gleich gewichtet (anders als der Fach-Gesamtdurchschnitt in der Übersicht, der die
+ * drei Kategorien je einmal mittelt) und rechnet aus, welchen Punkte-Schnitt die restlichen, noch
+ * geplanten Prüfungen bräuchten, um ein selbst gesetztes Ziel zu erreichen. */
+function renderZiele(){
+  const sem=activeSem||SEMESTERS[0];
+  if(!SUBJECTS.length||!sem) return `<div class="empty-state"><p>Noch keine Fächer/Halbjahre angelegt.</p></div>`;
+  const mittel=isMittelstufe();
+  let h=`<div class="section-head">Zielnoten ${SEM_LABELS[sem]||""}</div>
+  <p style="font-size:12px;color:var(--text-muted);margin:-8px 0 20px;line-height:1.6">
+    Setze pro Fach ein Ziel für den Halbjahresdurchschnitt. Der Rechner zeigt, welchen Schnitt du in den noch
+    geplanten Prüfungen brauchst, um es zu erreichen. <strong>Vereinfachtes Modell:</strong> hier zählt jede einzelne
+    Note gleich (Klausur, mündlich, sonstige) — anders als der Fach-Gesamtdurchschnitt in der Übersicht, der die drei
+    Kategorien je einmal mittelt und deshalb leicht abweichen kann.
+  </p>
+  <div class="card-grid">`;
+
+  SUBJECTS.forEach(subj=>{
+    const key=subj+"|"+sem;
+    const zielPunkte=(data.zielnoten&&data.zielnoten[key]!==undefined)?data.zielnoten[key]:null;
+    const entries=["klausuren","muendlich","sonstige"].flatMap(cat=>entriesForSem(cat,sem).filter(e=>e.subj===subj));
+    const scores=entries.map(e=>Number(e.score)).filter(v=>!isNaN(v));
+    const n=scores.length;
+    const sum=scores.reduce((a,b)=>a+b,0);
+    const currentAvg=n?sum/n:null;
+    const planN=zielPlanN[key]!==undefined?zielPlanN[key]:1;
+    const zielInputVal=zielPunkte!==null?(mittel?punkteZuSchulnote(zielPunkte):zielPunkte):"";
+
+    let statusHTML;
+    if(zielPunkte===null){
+      statusHTML=`<p style="font-size:12px;color:var(--text-muted)">Noch kein Ziel gesetzt.</p>`;
+    } else if(currentAvg!==null&&currentAvg>=zielPunkte){
+      statusHTML=`<p style="font-size:12px;color:var(--green-fg);font-weight:600">🎉 Ziel in diesem Halbjahr bereits erreicht.</p>`;
+    } else {
+      const neededAvgPunkte=(zielPunkte*(n+planN)-sum)/planN;
+      if(neededAvgPunkte>15){
+        statusHTML=`<p style="font-size:12px;color:var(--red-fg)">Mit ${planN} weiteren Prüfung(en) rechnerisch nicht mehr erreichbar (bräuchtest mehr als 15 Punkte Ø). Erhöhe die Anzahl geplanter Prüfungen oder passe das Ziel an.</p>`;
+      } else {
+        const display=mittel?`Note ${punkteZuKontinuierlicherNote(neededAvgPunkte).toFixed(1)}`:`${neededAvgPunkte.toFixed(1)} Punkte`;
+        statusHTML=`<p style="font-size:12px">Benötigter Ø in den nächsten <strong>${planN}</strong> Prüfung(en): <strong style="color:var(--gold)">${display}</strong></p>`;
+      }
+    }
+
+    h+=`<div class="card" style="align-items:stretch;min-width:240px">
+      <div class="card-top"><div class="card-name">${subj}</div></div>
+      <div style="display:flex;align-items:center;gap:8px;margin:8px 0;font-size:12px;color:var(--text-muted)">
+        <label>Ziel (${mittel?"Note 1–6":"Punkte 0–15"})</label>
+        <input type="number" min="${mittel?1:0}" max="${mittel?6:15}" value="${zielInputVal}" placeholder="–"
+          style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)"
+          onchange="setZielnote('${subj}','${sem}',this.value)">
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);margin:4px 0">
+        Aktueller Schnitt: ${currentAvg!==null?(mittel?`Note ${punkteZuKontinuierlicherNote(currentAvg).toFixed(1)}`:`${currentAvg.toFixed(1)} Punkte`):"—"}
+        <span class="muted">(${n} Note${n===1?"":"n"})</span>
+      </p>
+      <div style="display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-size:12px;color:var(--text-muted)">
+        <label>Geplante weitere Prüfungen</label>
+        <input type="number" min="1" max="20" value="${planN}" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)" onchange="setZielPlanN('${subj}','${sem}',this.value)">
+      </div>
+      ${statusHTML}
+    </div>`;
+  });
+
+  h+=`</div>`;
+  return h;
+}
+async function setZielnote(subj,sem,raw){
+  if(!data.zielnoten) data.zielnoten={};
+  const key=subj+"|"+sem;
+  const val=parseScoreInput(raw);
+  if(val===null) delete data.zielnoten[key]; else data.zielnoten[key]=val;
+  await saveData();
+  render();
+}
+function setZielPlanN(subj,sem,raw){
+  const key=subj+"|"+sem;
+  zielPlanN[key]=Math.max(1,Math.min(20,Number(raw)||1));
+  render();
+}
+
+/* ======================= Fehlstunden/Absenzen-Tracker ======================= */
+const ABSENZ_STATUS={
+  entschuldigt:{label:"Entschuldigt",fg:"var(--green-fg)",bg:"var(--green-bg)",bd:"var(--green-bd)"},
+  unentschuldigt:{label:"Unentschuldigt",fg:"var(--red-fg)",bg:"var(--red-bg)",bd:"var(--red-bd)"},
+  offen:{label:"Offen/unklar",fg:"var(--yellow-fg)",bg:"var(--yellow-bg)",bd:"var(--yellow-bd)"}
+};
+function absenzenForSem(sem){ return data.absenzen.filter(a=>a.sem===sem); }
+function renderAbsenzen(){
+  const sem=activeSem||SEMESTERS[0];
+  const entries=absenzenForSem(sem);
+  const sumStunden=cat=>entries.filter(a=>a.status===cat).reduce((s,a)=>s+(Number(a.stunden)||0),0);
+  const gesamt=entries.reduce((s,a)=>s+(Number(a.stunden)||0),0);
+
+  let h=`<div class="section-head">Fehlstunden ${SEM_LABELS[sem]||""}</div>
+  <div class="metrics">
+    <div class="metric"><div class="metric-label">Gesamt</div><div class="metric-value">${gesamt}</div></div>
+    <div class="metric"><div class="metric-label">Entschuldigt</div><div class="metric-value" style="color:var(--green-fg)">${sumStunden("entschuldigt")}</div></div>
+    <div class="metric"><div class="metric-label">Unentschuldigt</div><div class="metric-value" style="color:var(--red-fg)">${sumStunden("unentschuldigt")}</div></div>
+    <div class="metric"><div class="metric-label">Offen/unklar</div><div class="metric-value" style="color:var(--yellow-fg)">${sumStunden("offen")}</div></div>
+  </div>`;
+
+  h+=`<div class="form-section">
+    <div class="form-title">Neuer Eintrag</div>
+    <div class="form-grid">
+      <div class="fg"><label>Datum</label><input type="text" id="f-abs-date" placeholder="z.B. 15.01.2026"></div>
+      <div class="fg"><label>Stunden</label><input type="number" id="f-abs-stunden" min="0" max="12" step="1" placeholder="z.B. 2"></div>
+      <div class="fg"><label>Status</label><select id="f-abs-status">
+        <option value="entschuldigt">Entschuldigt</option>
+        <option value="unentschuldigt">Unentschuldigt</option>
+        <option value="offen">Offen/unklar</option>
+      </select></div>
+      <div class="fg"><label>Fach (optional)</label><select id="f-abs-fach">
+        <option value="">Allgemein/alle Fächer</option>
+        ${SUBJECTS.map(s=>`<option value="${s}">${s}</option>`).join("")}
+      </select></div>
+      <div class="fg"><label>Bemerkung</label><input type="text" id="f-abs-note" placeholder="Optional..."></div>
+    </div>
+    <div class="form-footer"><button class="btn btn-primary" onclick="addAbsenz()">+ Eintragen</button></div>
+  </div>`;
+
+  h+=`<div class="table-card"><table><thead><tr>
+    <th>Datum</th><th>Fach</th><th>Stunden</th><th>Status</th><th>Bemerkung</th><th></th>
+  </tr></thead><tbody>`;
+  if(!entries.length){
+    h+=`<tr><td colspan="6"><div class="empty-state"><p>Noch keine Fehlstunden für dieses Halbjahr erfasst.</p></div></td></tr>`;
+  } else {
+    [...entries].reverse().forEach(a=>{
+      const idx=data.absenzen.indexOf(a);
+      const st=ABSENZ_STATUS[a.status]||ABSENZ_STATUS.offen;
+      h+=`<tr>
+        <td class="muted">${a.datum||"—"}</td>
+        <td class="subj">${a.fach||"—"}</td>
+        <td>${a.stunden}</td>
+        <td><span class="badge" style="background:${st.bg};color:${st.fg};border-color:${st.bd}">${st.label}</span></td>
+        <td class="muted" style="font-size:12px">${a.bemerkung||""}</td>
+        <td>
+          ${pendingDelete&&pendingDelete.kind==="absenz"&&pendingDelete.idx===idx
+            ?`<span style="font-size:11px;color:var(--red-fg);margin-right:4px">Löschen?</span><button class="btn btn-primary" style="padding:3px 9px;font-size:11px" onclick="confirmDeleteAbsenz(${idx})">Ja</button> <button class="btn" style="padding:3px 9px;font-size:11px" onclick="cancelPendingDelete()">Nein</button>`
+            :`<button class="btn-delete" onclick="requestDeleteAbsenz(${idx})" title="Löschen">✕</button>`}
+        </td>
+      </tr>`;
+    });
+  }
+  h+=`</tbody></table></div>
+  <p style="font-size:11px;color:var(--text-muted);margin-top:10px">Rein informativ — ersetzt keine offizielle Fehlzeitenerfassung deiner Schule.</p>`;
+  return h;
+}
+async function addAbsenz(){
+  const g=id=>document.getElementById(id).value;
+  const stundenRaw=g("f-abs-stunden");
+  const stunden=stundenRaw===""?0:Math.max(0,Number(stundenRaw));
+  if(!stunden){ showToast("Bitte eine Stundenzahl größer 0 eintragen."); return; }
+  data.absenzen.push({
+    sem:activeSem, datum:g("f-abs-date").trim(), stunden,
+    status:g("f-abs-status"), fach:g("f-abs-fach"), bemerkung:g("f-abs-note").trim()
+  });
+  await saveData();
+  render();
+}
+function requestDeleteAbsenz(idx){ pendingDelete={kind:"absenz",idx}; render(); }
+async function confirmDeleteAbsenz(idx){
+  data.absenzen.splice(idx,1);
+  pendingDelete=null;
+  await saveData();
+  render();
 }
 
 function renderStatistik(){
@@ -1426,6 +1631,21 @@ function renderStatistik(){
   });
   h+=`</tbody></table></div>
   <p style="font-size:11px;color:var(--text-muted);margin:-12px 0 20px">Lineare Regression über deine bisherigen Halbjahreswerte, projiziert auf ${SEM_LABELS[nextSem||SEMESTERS[SEMESTERS.length-1]]}. Das Band ist keine exakte Konfidenzgrenze (dafür sind 2–4 Datenpunkte zu wenig), sondern eine grobe Unsicherheitsspanne (±1 Streuung).</p>`;
+
+  /* 3b) GPA / internationale Notenskala (Näherung) */
+  h+=`<div class="section-head">GPA / internationale Notenskala (Näherung)</div>
+  <div class="ov-table"><table>
+    <thead><tr><th>Fach</th><th>Ø Punkte (gesamt)</th><th>≈ Note</th><th>≈ US-GPA</th></tr></thead>
+    <tbody>
+      ${SUBJECTS.map(subj=>{
+        const a=overallAvg(subj);
+        const note=a!==null?punkteZuKontinuierlicherNote(a):null;
+        const gpa=noteToGPA(note);
+        return `<tr><td class="subj">${subj}</td><td>${fmt(a)}</td><td>${note!==null?note.toFixed(1):"—"}</td><td style="font-weight:600">${gpa!==null?gpa.toFixed(2):"—"}</td></tr>`;
+      }).join("")}
+    </tbody>
+  </table></div>
+  <p style="font-size:11px;color:var(--text-muted);margin:-12px 0 20px">Näherung für internationale Bewerbungen: die Punkte→Note-Umrechnung folgt der in der Oberstufe üblichen Formel (Note = (17−Punkte)/3), die GPA-Umrechnung der <em>Modified Bavarian Formula</em> (GPA = 5−Note, ab Note 4,1 = 0,0), wie sie u.a. von WES für deutsche Abschlüsse verwendet wird. Das ist eine verbreitete Näherung, keine offizielle Umrechnung — Hochschulen/Programme im Ausland können eigene Konvertierungstabellen verlangen.</p>`;
 
   /* 4-6) Abitur/Fachabi-gebundene Analysen (Grenznutzen, Monte-Carlo, Bootstrap, Optimierer) */
   if(!(CONFIG&&CONFIG.abiturModuleEnabled)){
@@ -1686,6 +1906,18 @@ function renderFaecher(){
     </label>
   </div>`;
 
+  /* ======================= Fehlstunden/Absenzen-Tracker ======================= */
+  h+=`<div class="section-head">Fehlstunden/Absenzen-Tracker</div>
+  <div class="form-section">
+    <p style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:12px">
+      Optionales Zusatzmodul zum Erfassen von Fehlstunden (entschuldigt/unentschuldigt) pro Halbjahr — unabhängig von
+      Noten und Abitur-/Mittelstufen-Modul.
+    </p>
+    <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer">
+      <input type="checkbox" ${CONFIG.absenzenModuleEnabled?"checked":""} onchange="toggleAbsenzenModul()"> Fehlstunden/Absenzen-Tracker aktivieren
+    </label>
+  </div>`;
+
   /* ======================= Daten: Import/Export ======================= */
   h+=`<div class="section-head">Daten sichern & übertragen</div>
   <div class="form-section">
@@ -1696,9 +1928,10 @@ function renderFaecher(){
     <div class="form-footer" style="gap:10px">
       <button class="btn btn-primary" onclick="exportAllDataJSON()">⬇ Alle Daten exportieren (JSON)</button>
       <button class="btn" onclick="exportRawDataCSV()">⬇ Noten exportieren (CSV)</button>
+      <button class="btn" onclick="exportKlausurenICS()">📅 Klausurtermine exportieren (ICS)</button>
       <button class="btn" onclick="triggerImportFile()">⬆ Daten importieren</button>
     </div>
-    <p style="font-size:11px;color:var(--text-muted);margin-top:10px">Die JSON-Datei ist eine vollständige Sicherung und kann wieder importiert werden. Die CSV-Datei enthält nur die einzelnen Noteneinträge (eine Zeile pro Eintrag) zur Weiterverarbeitung in Excel/Numbers/Google Sheets — sie lässt sich nicht wieder zurück importieren. Ein Import ersetzt alle aktuell in diesem Browser gespeicherten Daten (Fächer, Halbjahre, Noten, Einstellungen) durch den Inhalt der Datei.</p>
+    <p style="font-size:11px;color:var(--text-muted);margin-top:10px">Die JSON-Datei ist eine vollständige Sicherung und kann wieder importiert werden. Die CSV-Datei enthält nur die einzelnen Noteneinträge (eine Zeile pro Eintrag) zur Weiterverarbeitung in Excel/Numbers/Google Sheets. Die ICS-Datei enthält alle Klausurtermine mit gültigem Datum zum Import in Google-/Apple-/Outlook-Kalender. CSV und ICS lassen sich nicht wieder zurück importieren. Ein Import ersetzt alle aktuell in diesem Browser gespeicherten Daten (Fächer, Halbjahre, Noten, Einstellungen) durch den Inhalt der Datei.</p>
   </div>`;
 
   return h;
@@ -1779,6 +2012,12 @@ async function toggleMittelstufeModul(){
   await saveConfig();
   render();
 }
+async function toggleAbsenzenModul(){
+  CONFIG.absenzenModuleEnabled=!CONFIG.absenzenModuleEnabled;
+  if(activeTab==="absenzen"&&!CONFIG.absenzenModuleEnabled) activeTab="overview";
+  await saveConfig();
+  render();
+}
 async function setLkDoubleFromIndex(val){
   CONFIG.abiturModule.lkDoubleFromIndex=Math.max(0,Math.min(SEMESTERS.length,Number(val)));
   await saveConfig();
@@ -1826,6 +2065,39 @@ function exportRawDataCSV(){
   downloadCSV("notenkompass-noten-"+new Date().toISOString().slice(0,10)+".csv", rows);
   showToast("CSV-Export heruntergeladen.");
 }
+/* ICS-Kalenderexport (RFC 5545) für Klausurtermine — ganztägige VEVENTs, ein Eintrag pro Klausur mit
+ * gültigem, parsbarem Datum. Reiner Text-Export, kein Rückimport in die App vorgesehen. */
+function exportKlausurenICS(){
+  const events=data.klausuren
+    .filter(e=>SUBJECTS.includes(e.subj))
+    .map(e=>({...e,dateObj:parseGermanDate(e.date)}))
+    .filter(e=>e.dateObj);
+  if(!events.length){ showToast("Keine Klausuren mit gültigem Datum (TT.MM.JJJJ) zum Exportieren gefunden."); return; }
+  const pad=n=>String(n).padStart(2,"0");
+  const dtStamp=d=>`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+  const now=new Date();
+  const nowStamp=`${now.getUTCFullYear()}${pad(now.getUTCMonth()+1)}${pad(now.getUTCDate())}T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
+  const escapeICS=s=>String(s||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n");
+  let ics="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Notenkompass//Klausurtermine//DE\r\nCALSCALE:GREGORIAN\r\n";
+  events.forEach((e,i)=>{
+    const dStr=dtStamp(e.dateObj);
+    ics+="BEGIN:VEVENT\r\n";
+    ics+=`UID:notenkompass-${dStr}-${i}-${Math.random().toString(36).slice(2,8)}@notenkompass\r\n`;
+    ics+=`DTSTAMP:${nowStamp}\r\n`;
+    ics+=`DTSTART;VALUE=DATE:${dStr}\r\n`;
+    ics+=`SUMMARY:${escapeICS((e.type||"Klausur")+" "+e.subj)}\r\n`;
+    if(e.note) ics+=`DESCRIPTION:${escapeICS(e.note)}\r\n`;
+    ics+="END:VEVENT\r\n";
+  });
+  ics+="END:VCALENDAR\r\n";
+  const blob=new Blob([ics],{type:"text/calendar;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download="notenkompass-klausurtermine.ics";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast(`${events.length} Klausurtermin(e) als ICS exportiert.`);
+}
 function triggerImportFile(){
   const input=document.getElementById("import-file-input");
   if(input) input.click();
@@ -1844,7 +2116,8 @@ async function handleImportFile(input){
     applyConfig(Object.assign(defaultConfig(), payload.config, {abiturModule:Object.assign(defaultConfig().abiturModule, payload.config.abiturModule||{})}));
     SUBJECTS=Array.isArray(payload.subjects)?payload.subjects:[];
     KLAUSUR_SLOTS=payload.klausurSlots||{};
-    data=payload.data||{klausuren:[],muendlich:[],sonstige:[]};
+    data=payload.data||{klausuren:[],muendlich:[],sonstige:[],absenzen:[],zielnoten:{}};
+    ensureDataDefaults();
     if(payload.abiSettings) abiSettings=payload.abiSettings;
     await saveConfig();
     await saveSubjects();
