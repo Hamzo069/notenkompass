@@ -28,6 +28,15 @@ Notenkompass ist eine einzelne statische Webseite ohne Build-Schritt und ohne Ba
 
 Du kannst die Seite auch per GitHub Pages hosten (Settings → Pages → Branch `main`, Ordner `/`) und sie dir als Lesezeichen/PWA auf dem Smartphone ablegen.
 
+### Windows-Desktop-Version (Download)
+
+Notenkompass gibt es auch als installierbare Windows-App (gebaut mit [Tauri](https://tauri.app) — kein Browser nötig, eigenes Fenster, eigenes Icon, Daten bleiben weiterhin lokal auf dem Gerät):
+
+- Unter [Releases](https://github.com/Hamzo069/notenkompass/releases) die neueste `.exe`/`.msi` herunterladen (sobald ein Release veröffentlicht wurde)
+- Oder im [Actions-Tab](https://github.com/Hamzo069/notenkompass/actions/workflows/tauri-windows.yml) den Workflow "Windows-Build (Tauri)" manuell starten ("Run workflow") und den fertigen Installer als Artefakt herunterladen
+
+macOS/Linux sind aktuell nicht als Download vorbereitet — dafür reicht bislang die Browser-Variante oben. Wer selbst bauen möchte: `src-tauri/` enthält das vollständige Tauri-Projekt, lokal mit `npx @tauri-apps/cli build` baubar (benötigt eine Rust-Toolchain, siehe [Tauri-Voraussetzungen](https://tauri.app/start/prerequisites/)).
+
 ### Daten sichern / übertragen
 
 Da alle Daten nur lokal im Browser gespeichert werden, gehen sie z.B. beim Löschen der Browserdaten verloren. Nutze dafür in den **Einstellungen**:
