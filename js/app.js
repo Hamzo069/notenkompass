@@ -10,7 +10,110 @@ const TYPES = {
   muendlich:["Abfrage","Referat","Präsentation","Unterrichtsbeteiligung","Prüfungsgespräch"],
   sonstige:["Hausaufgaben","Projektarbeit","Portfolio","Protokoll","Facharbeit","Gruppenarbeit","Praktische Leistung"]
 };
-const TAB_TITLES = {overview:"Übersicht",klausuren:"Klausuren",muendlich:"Mündliche Noten",sonstige:"Sonstige Leistungen",abi:"Abitur/Fachabi-Modul",statistik:"Statistik & Analyse",faecher:"Einstellungen"};
+const TAB_TITLES = {overview:"Übersicht",klausuren:"Klausuren",muendlich:"Mündliche Noten",sonstige:"Sonstige Leistungen",abi:"Abitur/Fachabi-Modul",mittelstufe:"Mittelstufen-Modus",statistik:"Statistik & Analyse",faecher:"Einstellungen"};
+
+/* ======================= Profile (mehrere Schüler/Datensätze im selben Browser) =======================
+ * Jedes Profil hat seinen eigenen, isolierten Datensatz (Config, Fächer, Noten, Abi-Einstellungen).
+ * Das zuerst angelegte/verwendete Profil heißt "default" und nutzt bewusst dieselben, unpräfigierten
+ * Storage-Keys wie vor Einführung dieses Features (z.B. "notenkompass_config") — so bleibt bestehenden
+ * Nutzern ihr Datensatz ohne jede Migration erhalten. Jedes weitere Profil bekommt eigene, präfigierte
+ * Keys ("notenkompass_p_<id>_config" usw.). Das Theme (hell/dunkel) ist bewusst profilübergreifend.
+ */
+const PROFILES_KEY = "notenkompass_profiles";
+const ACTIVE_PROFILE_KEY = "notenkompass_active_profile";
+let PROFILES = [{id:"default", name:"Profil 1"}];
+let activeProfileId = "default";
+function pKey(name){
+  return activeProfileId==="default" ? "notenkompass_"+name : "notenkompass_p_"+activeProfileId+"_"+name;
+}
+async function loadProfiles(){
+  try{
+    const res=await window.storage.get(PROFILES_KEY);
+    if(res&&res.value){
+      const parsed=JSON.parse(res.value);
+      if(Array.isArray(parsed)&&parsed.length) PROFILES=parsed;
+    }
+    const act=await window.storage.get(ACTIVE_PROFILE_KEY);
+    if(act&&act.value&&PROFILES.some(p=>p.id===act.value)) activeProfileId=act.value;
+  }catch(e){ /* noch keine Profile gespeichert — Standard "default" bleibt aktiv */ }
+}
+async function saveProfiles(){
+  try{ await window.storage.set(PROFILES_KEY, JSON.stringify(PROFILES)); }catch(e){ console.error(e); }
+}
+async function setActiveProfile(id){
+  activeProfileId=id;
+  try{ await window.storage.set(ACTIVE_PROFILE_KEY, id); }catch(e){ /* best effort */ }
+}
+function newProfileId(){
+  let n=1; const ids=PROFILES.map(p=>p.id);
+  while(ids.includes("prof"+n)) n++;
+  return "prof"+n;
+}
+async function createProfile(name){
+  const id=newProfileId();
+  PROFILES.push({id, name:name||("Profil "+(PROFILES.length+1))});
+  await saveProfiles();
+  return id;
+}
+async function switchToProfile(id){
+  await setActiveProfile(id);
+  document.getElementById("content").innerHTML='<div style="padding:60px;text-align:center;color:var(--text-muted)">Lade Profil…</div>';
+  await loadProfileData();
+}
+async function loadProfileData(){
+  // Zustand aus dem vorherigen Profil zurücksetzen, damit nichts dorthin "durchsickert", wenn das
+  // neue/gewechselte Profil noch keine eigenen gespeicherten Daten hat (loadData/loadAbiSettings/
+  // loadSubjects überschreiben nur bei einem Treffer, lassen sonst den aktuellen In-Memory-Stand stehen).
+  CONFIG=null;
+  SUBJECTS=[];
+  KLAUSUR_SLOTS={};
+  data={klausuren:[],muendlich:[],sonstige:[]};
+  abiSettings=loadAbiSettingsDefault();
+  const hasConfig=await loadConfig();
+  await loadSubjects();
+  await Promise.all([loadData(), loadAbiSettings()]);
+  if(!hasConfig || !SUBJECTS.length){
+    runSetupWizard();
+    return;
+  }
+  if(CONFIG&&CONFIG.abiturModule&&CONFIG.abiturModule.numPruefungsfaecher) resizeBlock2(CONFIG.abiturModule.numPruefungsfaecher);
+  activeTab="overview";
+  render();
+}
+async function createProfileFromForm(){
+  const input=document.getElementById("f-newprofile");
+  const name=input?input.value.trim():"";
+  if(!name){ showToast("Bitte einen Namen für das neue Profil eingeben."); return; }
+  const id=await createProfile(name);
+  await switchToProfile(id);
+}
+async function renameProfile(id,name){
+  const p=PROFILES.find(p=>p.id===id);
+  if(!p) return;
+  p.name=name.trim()||p.name;
+  await saveProfiles();
+  render();
+}
+function requestDeleteProfile(id){
+  pendingDelete={kind:"profile",id};
+  render();
+}
+async function confirmDeleteProfile(id){
+  if(PROFILES.length<=1){ showToast("Das letzte Profil kann nicht gelöscht werden."); pendingDelete=null; render(); return; }
+  if(id!=="default"){
+    try{
+      await Promise.all(["config","subjects","data","abi_settings"].map(k=>window.storage.remove&&window.storage.remove("notenkompass_p_"+id+"_"+k)));
+    }catch(e){ /* best effort */ }
+  }
+  PROFILES=PROFILES.filter(p=>p.id!==id);
+  await saveProfiles();
+  pendingDelete=null;
+  if(activeProfileId===id){
+    await switchToProfile(PROFILES[0].id);
+  } else {
+    render();
+  }
+}
 
 /* ======================= Konfiguration (Perioden, Module) ======================= */
 // CONFIG wird beim ersten Start über den Einrichtungsassistenten erzeugt (siehe setup.js-Abschnitt unten).
@@ -52,7 +155,8 @@ function defaultConfig(){
     version: 1,
     periods: [{id:"p1",label:"Periode 1"},{id:"p2",label:"Periode 2"}],
     abiturModuleEnabled: false,
-    abiturModule: { bundesland:"HE", lkDoubleFromIndex: 2, fachabiPeriodsCount: 2, numLK: 2, numPruefungsfaecher: 5 }
+    abiturModule: { bundesland:"HE", lkDoubleFromIndex: 2, fachabiPeriodsCount: 2, numLK: 2, numPruefungsfaecher: 5 },
+    mittelstufeModuleEnabled: false
   };
 }
 function applyConfig(cfg){
@@ -66,7 +170,7 @@ function applyConfig(cfg){
 }
 async function loadConfig(){
   try{
-    const res = await window.storage.get("notenkompass_config");
+    const res = await window.storage.get(pKey("config"));
     if(res && res.value){
       const parsed = JSON.parse(res.value);
       if(parsed && Array.isArray(parsed.periods) && parsed.periods.length){
@@ -78,7 +182,7 @@ async function loadConfig(){
   return false;
 }
 async function saveConfig(){
-  try{ await window.storage.set("notenkompass_config", JSON.stringify(CONFIG)); }catch(e){ console.error(e); }
+  try{ await window.storage.set(pKey("config"), JSON.stringify(CONFIG)); }catch(e){ console.error(e); }
 }
 function periodIndex(sem){ return SEMESTERS.indexOf(sem); }
 function isDoubleWeightPeriod(sem){
@@ -174,13 +278,13 @@ async function toggleTheme(){
 
 async function loadData(){
   try{
-    const res=await window.storage.get("notenkompass_data");
+    const res=await window.storage.get(pKey("data"));
     if(res&&res.value) data=JSON.parse(res.value);
   }catch(e){ /* noch keine Daten gespeichert */ }
 }
 async function loadSubjects(){
   try{
-    const res=await window.storage.get("notenkompass_subjects");
+    const res=await window.storage.get(pKey("subjects"));
     if(res&&res.value){
       const parsed=JSON.parse(res.value);
       if(parsed&&Array.isArray(parsed.subjects)&&parsed.slots){
@@ -193,7 +297,7 @@ async function loadSubjects(){
 async function saveSubjects(){
   setSyncStatus("Speichert…");
   try{
-    await window.storage.set("notenkompass_subjects", JSON.stringify({subjects:SUBJECTS,slots:KLAUSUR_SLOTS}));
+    await window.storage.set(pKey("subjects"), JSON.stringify({subjects:SUBJECTS,slots:KLAUSUR_SLOTS}));
     setSyncStatus("Gespeichert ✓");
     setTimeout(()=>setSyncStatus(""), 1500);
   }catch(e){
@@ -204,7 +308,7 @@ async function saveSubjects(){
 async function saveData(){
   setSyncStatus("Speichert…");
   try{
-    await window.storage.set("notenkompass_data", JSON.stringify(data));
+    await window.storage.set(pKey("data"), JSON.stringify(data));
     setSyncStatus("Gespeichert ✓");
     setTimeout(()=>setSyncStatus(""), 1500);
   }catch(e){
@@ -349,6 +453,7 @@ function renderSidebarNav(){
     {id:"sonstige",icon:"◇",label:"Sonstige"}
   ];
   if(CONFIG&&CONFIG.abiturModuleEnabled) items.push({id:"abi",icon:"🎓",label:"Abitur/Fachabi"});
+  if(CONFIG&&CONFIG.mittelstufeModuleEnabled) items.push({id:"mittelstufe",icon:"🏫",label:"Mittelstufe"});
   items.push({id:"statistik",icon:"📊",label:"Statistik"});
   items.push({id:"faecher",icon:"⚙",label:"Einstellungen"});
   nav.innerHTML=items.map(it=>`<button class="nav-item${it.id===activeTab?" active":""}" onclick="switchTab('${it.id}')" id="nav-${it.id}"><span class="icon">${it.icon}</span> ${it.label}</button>`).join("");
@@ -359,13 +464,26 @@ function renderSidebarPeriods(){
   el.innerHTML=SEMESTERS.map(s=>`<button class="sem-btn${s===activeSem?" active":""}" onclick="switchSem('${s}')" id="sem-${s}">${SEM_LABELS[s]}</button>`).join("");
 }
 
+function renderProfileSwitcher(){
+  const el=document.getElementById("profile-switcher");
+  if(!el) return;
+  if(PROFILES.length<=1){
+    el.innerHTML=`<button class="theme-toggle" onclick="switchTab('faecher')" title="Weiteres Profil anlegen (in den Einstellungen)">👤 ${PROFILES[0].name}</button>`;
+  } else {
+    el.innerHTML=`<select onchange="switchToProfile(this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)">
+      ${PROFILES.map(p=>`<option value="${p.id}" ${p.id===activeProfileId?"selected":""}>👤 ${p.name}</option>`).join("")}
+    </select>`;
+  }
+}
 function render(){
   renderSidebarNav();
   renderSidebarPeriods();
+  renderProfileSwitcher();
   const el=document.getElementById("content");
   let body;
   if(activeTab==="overview") body=renderOverview();
   else if(activeTab==="abi"&&CONFIG&&CONFIG.abiturModuleEnabled) body=renderAbi();
+  else if(activeTab==="mittelstufe"&&CONFIG&&CONFIG.mittelstufeModuleEnabled) body=renderMittelstufe();
   else if(activeTab==="statistik") body=renderStatistik();
   else if(activeTab==="faecher") body=renderFaecher();
   else body=renderCategory(activeTab);
@@ -600,14 +718,14 @@ function loadAbiSettingsDefault(){
 let abiSettings = loadAbiSettingsDefault();
 async function loadAbiSettings(){
   try{
-    const res=await window.storage.get("notenkompass_abi_settings");
+    const res=await window.storage.get(pKey("abi_settings"));
     if(res&&res.value) abiSettings=JSON.parse(res.value);
   }catch(e){ /* noch keine Einstellungen gespeichert */ }
 }
 async function saveAbiSettings(){
   setSyncStatus("Speichert…");
   try{
-    await window.storage.set("notenkompass_abi_settings", JSON.stringify(abiSettings));
+    await window.storage.set(pKey("abi_settings"), JSON.stringify(abiSettings));
     setSyncStatus("Gespeichert ✓");
     setTimeout(()=>setSyncStatus(""), 1500);
   }catch(e){
@@ -940,6 +1058,21 @@ function punkteToNote(p){
   if(n<1) n=1;
   return Math.floor(n*10)/10;
 }
+/* Standard-Umrechnungstabelle Notenpunkte (0-15) -> Schulnote (1-6), bundesweit einheitlich für die
+ * gymnasiale Oberstufe; wird hier für das Mittelstufen-Modul genutzt, um aus den ohnehin in dieser App
+ * eingetragenen 0-15-Punkte-Werten eine Schulnote abzuleiten (13-15=1, 10-12=2, 7-9=3, 4-6=4, 1-3=5, 0=6). */
+function punkteZuSchulnote(p){
+  if(p===null||p===undefined) return null;
+  if(p>=13) return 1;
+  if(p>=10) return 2;
+  if(p>=7) return 3;
+  if(p>=4) return 4;
+  if(p>=1) return 5;
+  return 6;
+}
+function schulnoteLabel(n){
+  return {1:"sehr gut",2:"gut",3:"befriedigend",4:"ausreichend",5:"mangelhaft",6:"ungenügend"}[n]||"—";
+}
 
 function renderAbi(){
   // Alle Fach/Halbjahr-Kombinationen sammeln
@@ -1101,6 +1234,69 @@ function renderAbi(){
       als Orientierung und gleiche sie zur Sicherheit mit deiner Schulleitung bzw. Oberstufenberatung ab.
     </p>
   </div>`;
+  return h;
+}
+
+/* ======================= Mittelstufen-Modus (Realschule/Haupt-/Mittelstufe) =======================
+ * Rechnet mit denselben 0-15-Punkte-Einträgen wie der Rest der App, leitet daraus aber pro Fach eine
+ * Schulnote (1-6) her (Standard-Umrechnungstabelle) und bildet einen Zeugnisdurchschnitt sowie eine
+ * vereinfachte Versetzungs-Einschätzung — als Orientierung, nicht als verbindliche Berechnung, da die
+ * genauen Versetzungsordnungen je nach Bundesland und Schulform (Haupt-/Realschule) unterschiedlich sind.
+ */
+function renderMittelstufe(){
+  const sem=activeSem||SEMESTERS[0];
+  let h=`<div class="section-head" style="display:flex;justify-content:space-between;align-items:center">
+    <span>Zeugnisnoten ${SEM_LABELS[sem]||""}</span>
+  </div>`;
+
+  const rows=SUBJECTS.map(subj=>{
+    const avgPunkte=overallAvgSem(subj,sem);
+    const note=avgPunkte!==null?punkteZuSchulnote(Math.round(avgPunkte)):null;
+    return {subj,avgPunkte,note};
+  });
+  const notenVorhanden=rows.filter(r=>r.note!==null).map(r=>r.note);
+  const zeugnisDurchschnitt=notenVorhanden.length?avg(notenVorhanden):null;
+
+  h+=`<div class="metrics">
+    <div class="metric"><div class="metric-label">Zeugnisdurchschnitt</div><div class="metric-value">${zeugnisDurchschnitt!==null?zeugnisDurchschnitt.toFixed(1):"—"}</div></div>
+    <div class="metric"><div class="metric-label">Beste Note</div><div class="metric-value">${notenVorhanden.length?Math.min(...notenVorhanden):"—"}</div></div>
+    <div class="metric"><div class="metric-label">Schwächste Note</div><div class="metric-value">${notenVorhanden.length?Math.max(...notenVorhanden):"—"}</div></div>
+    <div class="metric"><div class="metric-label">Fächer erfasst</div><div class="metric-value">${notenVorhanden.length} / ${SUBJECTS.length}</div></div>
+  </div>`;
+
+  h+=`<div class="ov-table"><table>
+    <thead><tr><th>Fach</th><th>Ø Punkte</th><th>Schulnote</th></tr></thead>
+    <tbody>
+      ${rows.map(r=>`<tr><td class="subj">${r.subj}</td><td>${r.avgPunkte!==null?r.avgPunkte.toFixed(1):"—"}</td><td>${r.note!==null?`<strong>${r.note}</strong> <span class="muted">(${schulnoteLabel(r.note)})</span>`:"—"}</td></tr>`).join("")}
+    </tbody>
+  </table></div>`;
+
+  const mangelhaft=rows.filter(r=>r.note===5).length;
+  const unguengend=rows.filter(r=>r.note===6).length;
+  let einschaetzung, einschaetzungColor;
+  if(!notenVorhanden.length){
+    einschaetzung="Noch keine Noten erfasst."; einschaetzungColor="var(--text-muted)";
+  } else if(unguengend>=1||mangelhaft>=3){
+    einschaetzung="Versetzung nach dieser Daumenregel gefährdet — mind. 1× ungenügend oder 3+× mangelhaft."; einschaetzungColor="var(--red-fg)";
+  } else if(mangelhaft===2){
+    einschaetzung="Versetzung meist nur mit Ausgleich möglich (z.B. eine gute Note in einem anderen Fach) — hängt von der genauen Versetzungsordnung ab."; einschaetzungColor="var(--yellow-fg)";
+  } else if(mangelhaft===1){
+    einschaetzung="In der Regel unproblematisch (1× mangelhaft wird meist toleriert)."; einschaetzungColor="var(--green-fg)";
+  } else {
+    einschaetzung="Keine mangelhaften/ungenügenden Noten — Versetzung nach dieser Daumenregel unproblematisch."; einschaetzungColor="var(--green-fg)";
+  }
+
+  h+=`<div class="section-head">Versetzungs-Einschätzung (vereinfachte Daumenregel)</div>
+  <div class="form-section">
+    <p style="font-size:14px;font-weight:600;color:${einschaetzungColor};margin-bottom:10px">${einschaetzung}</p>
+    <p style="font-size:12px;color:var(--text-muted);line-height:1.6">
+      Mangelhaft (5): <strong>${mangelhaft}</strong> Fach/Fächer · Ungenügend (6): <strong>${unguengend}</strong> Fach/Fächer.
+      <strong>Wichtig:</strong> Die echten Versetzungsregeln unterscheiden sich nach Bundesland und Schulform (Haupt-, Real-, Gesamtschule)
+      und berücksichtigen oft auch, in welchen Fächern (Kernfach vs. Nebenfach) die Note steht, sowie Ausgleichsmöglichkeiten.
+      Diese Einschätzung ist nur eine grobe Orientierung — verbindlich ist allein, was deine Schule dir mitteilt.
+    </p>
+  </div>`;
+
   return h;
 }
 
@@ -1300,7 +1496,33 @@ function setOptimizerMaxExclude(val){
 }
 
 function renderFaecher(){
-  let h=`<div class="form-section">
+  let h=`<div class="section-head">Profile</div>
+  <div class="form-section">
+    <p style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:12px">
+      Jedes Profil hat einen komplett getrennten Datensatz (Fächer, Noten, Halbjahre, Abi-Einstellungen) — praktisch,
+      wenn sich z.B. Geschwister denselben Browser teilen. Theme (hell/dunkel) gilt profilübergreifend.
+    </p>
+    <div class="form-grid">
+      <div class="fg"><label>Name des neuen Profils</label><input type="text" id="f-newprofile" placeholder="z.B. Vorname"></div>
+    </div>
+    <div class="form-footer"><button class="btn btn-primary" onclick="createProfileFromForm()">+ Profil hinzufügen</button></div>
+  </div>
+  <div class="table-card"><table><thead><tr><th>Profil</th><th></th></tr></thead><tbody>
+    ${PROFILES.map(p=>`<tr>
+      <td>
+        <input type="text" value="${p.name}" style="width:100%;max-width:220px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px" onchange="renameProfile('${p.id}',this.value)">
+        ${p.id===activeProfileId?`<span class="tag tag-ok" style="margin-left:8px">aktiv</span>`:`<button class="btn" style="padding:3px 9px;font-size:11px;margin-left:8px" onclick="switchToProfile('${p.id}')">Wechseln</button>`}
+      </td>
+      <td>
+        ${pendingDelete&&pendingDelete.kind==="profile"&&pendingDelete.id===p.id
+          ?`<span style="font-size:11px;color:var(--red-fg);margin-right:4px">Löschen inkl. aller Daten?</span><button class="btn btn-primary" style="padding:3px 9px;font-size:11px" onclick="confirmDeleteProfile('${p.id}')">Ja</button> <button class="btn" style="padding:3px 9px;font-size:11px" onclick="cancelPendingDelete()">Nein</button>`
+          :(PROFILES.length>1?`<button class="btn-delete" onclick="requestDeleteProfile('${p.id}')" title="Profil löschen">✕</button>`:"")}
+      </td>
+    </tr>`).join("")}
+  </tbody></table></div>
+  <p style="font-size:11px;color:var(--text-muted);margin:-12px 0 20px">Das Löschen eines Profils entfernt auch dessen Fächer, Noten und Einstellungen unwiderruflich. Exportiere vorher bei Bedarf eine Sicherungsdatei.</p>
+
+  <div class="form-section">
     <div class="form-title">Einrichtung ändern</div>
     <p style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:12px">Halbjahre, Fächer und das Abitur-Modul lassen sich unten einzeln anpassen. Wenn du stattdessen alles auf einmal neu durchgehen willst (z.B. weil die Anzahl Halbjahre nicht mehr passt), nutze den Einrichtungsassistenten erneut — bereits eingetragene Noten bleiben dabei erhalten.</p>
     <div class="form-footer"><button class="btn" onclick="runSetupWizard(true)">🔄 Einrichtungsassistent erneut durchlaufen</button></div>
@@ -1421,6 +1643,19 @@ function renderFaecher(){
   }
   h+=`</div>`;
 
+  /* ======================= Mittelstufen-Modus ======================= */
+  h+=`<div class="section-head">Mittelstufen-Modus</div>
+  <div class="form-section">
+    <p style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:12px">
+      Alternative zum Abitur/Fachabi-Modul für Haupt-/Realschule oder die Mittelstufe: leitet aus deinen
+      Punkte-Einträgen (0–15) eine Schulnote (1–6) je Fach ab, zeigt einen Zeugnisdurchschnitt und eine
+      grobe Versetzungs-Einschätzung. Für die Oberstufe lässt du dieses Modul am besten deaktiviert.
+    </p>
+    <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer">
+      <input type="checkbox" ${CONFIG.mittelstufeModuleEnabled?"checked":""} onchange="toggleMittelstufeModul()"> Mittelstufen-Modus aktivieren
+    </label>
+  </div>`;
+
   /* ======================= Daten: Import/Export ======================= */
   h+=`<div class="section-head">Daten sichern & übertragen</div>
   <div class="form-section">
@@ -1430,9 +1665,10 @@ function renderFaecher(){
     </p>
     <div class="form-footer" style="gap:10px">
       <button class="btn btn-primary" onclick="exportAllDataJSON()">⬇ Alle Daten exportieren (JSON)</button>
+      <button class="btn" onclick="exportRawDataCSV()">⬇ Noten exportieren (CSV)</button>
       <button class="btn" onclick="triggerImportFile()">⬆ Daten importieren</button>
     </div>
-    <p style="font-size:11px;color:var(--text-muted);margin-top:10px">Ein Import ersetzt alle aktuell in diesem Browser gespeicherten Daten (Fächer, Halbjahre, Noten, Einstellungen) durch den Inhalt der Datei.</p>
+    <p style="font-size:11px;color:var(--text-muted);margin-top:10px">Die JSON-Datei ist eine vollständige Sicherung und kann wieder importiert werden. Die CSV-Datei enthält nur die einzelnen Noteneinträge (eine Zeile pro Eintrag) zur Weiterverarbeitung in Excel/Numbers/Google Sheets — sie lässt sich nicht wieder zurück importieren. Ein Import ersetzt alle aktuell in diesem Browser gespeicherten Daten (Fächer, Halbjahre, Noten, Einstellungen) durch den Inhalt der Datei.</p>
   </div>`;
 
   return h;
@@ -1507,6 +1743,12 @@ async function toggleAbiturModule(){
   await saveConfig();
   render();
 }
+async function toggleMittelstufeModul(){
+  CONFIG.mittelstufeModuleEnabled=!CONFIG.mittelstufeModuleEnabled;
+  if(activeTab==="mittelstufe"&&!CONFIG.mittelstufeModuleEnabled) activeTab="overview";
+  await saveConfig();
+  render();
+}
 async function setLkDoubleFromIndex(val){
   CONFIG.abiturModule.lkDoubleFromIndex=Math.max(0,Math.min(SEMESTERS.length,Number(val)));
   await saveConfig();
@@ -1541,6 +1783,18 @@ function exportAllDataJSON(){
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   showToast("Export heruntergeladen.");
+}
+const CAT_LABELS={klausuren:"Klausur",muendlich:"Mündlich",sonstige:"Sonstige"};
+function exportRawDataCSV(){
+  const rows=[["Kategorie","Fach","Halbjahr","Art","Datum","Punkte","Notiz"]];
+  ["klausuren","muendlich","sonstige"].forEach(cat=>{
+    data[cat].forEach(e=>{
+      rows.push([CAT_LABELS[cat], e.subj, SEM_LABELS[e.sem]||e.sem, e.type||"", e.date||"", isEmptyScore(e.score)?"":e.score, e.note||""]);
+    });
+  });
+  if(rows.length===1){ showToast("Noch keine Noten eingetragen — es gibt nichts zu exportieren."); return; }
+  downloadCSV("notenkompass-noten-"+new Date().toISOString().slice(0,10)+".csv", rows);
+  showToast("CSV-Export heruntergeladen.");
 }
 function triggerImportFile(){
   const input=document.getElementById("import-file-input");
@@ -2143,6 +2397,7 @@ async function finishSetupWizard(isReentry){
 async function init(){
   document.getElementById("content").innerHTML='<div style="padding:60px;text-align:center;color:var(--text-muted)">Lade deine Daten…</div>';
   await loadTheme();
+  await loadProfiles();
   const hasConfig=await loadConfig();
   await loadSubjects();
   await Promise.all([loadData(), loadAbiSettings()]);

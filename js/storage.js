@@ -31,5 +31,14 @@
     return Promise.resolve();
   }
 
-  window.storage = { get: get, set: set };
+  function remove(key) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch (e) {
+      console.warn("notenkompass: localStorage.removeItem failed", e);
+    }
+    return Promise.resolve();
+  }
+
+  window.storage = { get: get, set: set, remove: remove };
 })();
