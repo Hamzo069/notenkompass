@@ -595,6 +595,9 @@ function renderCategory(cat){
   const catAvg=scores.length?avg(scores):null;
   const avgC=scoreColor(catAvg!==null?Math.round(catAvg):null);
   const isK=cat==="klausuren";
+  const mittel=isMittelstufe();
+  const schulnoten=scores.map(punkteZuSchulnote);
+  const schulnotenAvg=schulnoten.length?avg(schulnoten):null;
 
   let h=`<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px;gap:12px;flex-wrap:wrap">
     <div class="fg" style="max-width:220px">
@@ -607,7 +610,12 @@ function renderCategory(cat){
     <button class="btn ${bulkMode?"btn-primary":""}" style="padding:7px 16px;font-size:12px;font-weight:600" onclick="toggleBulkMode('${cat}')">${bulkMode?"✓ Mehrfach-Modus aktiv":"📋 Mehrere auf einmal eintragen"}</button>
   </div>`;
 
-  h+=`<div class="metrics">
+  h+=mittel?`<div class="metrics">
+    <div class="metric"><div class="metric-label">Einträge</div><div class="metric-value">${entries.length}</div></div>
+    <div class="metric"><div class="metric-label">Durchschnitt</div><div class="metric-value" style="color:${catAvg!==null?avgC.fg:"var(--text)"}">${fmt(schulnotenAvg)}</div></div>
+    <div class="metric"><div class="metric-label">Beste Note</div><div class="metric-value">${schulnoten.length?Math.min(...schulnoten):"—"}</div></div>
+    <div class="metric"><div class="metric-label">Schlechteste Note</div><div class="metric-value">${schulnoten.length?Math.max(...schulnoten):"—"}</div></div>
+  </div>`:`<div class="metrics">
     <div class="metric"><div class="metric-label">Einträge</div><div class="metric-value">${entries.length}</div></div>
     <div class="metric"><div class="metric-label">Durchschnitt</div><div class="metric-value" style="color:${catAvg!==null?avgC.fg:"var(--text)"}">${fmt(catAvg)}</div></div>
     <div class="metric"><div class="metric-label">Bester Wert</div><div class="metric-value">${scores.length?Math.max(...scores):"—"}</div></div>
@@ -624,7 +632,7 @@ function renderCategory(cat){
       h+=`<div class="card">
         <div class="card-top">
           <div class="card-name">${subj}</div>
-          <div class="card-avg" style="color:${a!==null?c.fg:"var(--text-muted)"}">${fmt(a)}</div>
+          <div class="card-avg" style="color:${a!==null?c.fg:"var(--text-muted)"}">${mittel?fmt(a!==null?punkteZuSchulnote(Math.round(a)):null,0):fmt(a)}</div>
         </div>
         <div class="slots">${slotsH}</div>
         <div class="slot-label">${done}/${slots} eingetragen</div>
@@ -646,13 +654,13 @@ function renderCategory(cat){
       <table class="bulk-table" style="width:100%;border-collapse:collapse;margin-top:12px">
         <thead><tr>
           <th style="text-align:left;padding:6px 4px;font-size:11px;color:var(--text-muted);text-transform:uppercase">Fach</th>
-          <th style="text-align:left;padding:6px 4px;font-size:11px;color:var(--text-muted);text-transform:uppercase">Punkte (0–15)</th>
+          <th style="text-align:left;padding:6px 4px;font-size:11px;color:var(--text-muted);text-transform:uppercase">${mittel?"Schulnote (1–6)":"Punkte (0–15)"}</th>
           <th style="text-align:left;padding:6px 4px;font-size:11px;color:var(--text-muted);text-transform:uppercase">Bemerkung</th>
         </tr></thead>
         <tbody>
           ${bulkSubjects.map((s,i)=>`<tr>
             <td style="padding:6px 4px;font-weight:600;font-size:13px">${s}</td>
-            <td style="padding:6px 4px"><input type="number" min="0" max="15" placeholder="—" id="bulk-score-${i}"></td>
+            <td style="padding:6px 4px"><input type="number" min="${mittel?1:0}" max="${mittel?6:15}" placeholder="—" id="bulk-score-${i}"></td>
             <td style="padding:6px 4px"><input type="text" placeholder="Optional..." id="bulk-note-${i}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px;font-family:inherit"></td>
           </tr>`).join("")}
         </tbody>
@@ -661,7 +669,7 @@ function renderCategory(cat){
         <button class="btn btn-primary" onclick="addBulkEntries('${cat}')">+ Alle ausgefüllten Fächer eintragen</button>
         <button class="btn" onclick="toggleBulkMode('${cat}')">Abbrechen</button>
       </div>
-      <p style="font-size:11px;color:var(--text-muted);margin-top:10px">Leere Punkte-Felder werden übersprungen — du musst nicht für jedes Fach etwas eintragen.</p>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:10px">${mittel?"Leere Noten-Felder werden übersprungen — du musst nicht für jedes Fach etwas eintragen.":"Leere Punkte-Felder werden übersprungen — du musst nicht für jedes Fach etwas eintragen."}</p>
     </div>`;
   } else {
     h+=`<div class="form-section">
@@ -670,7 +678,7 @@ function renderCategory(cat){
         <div class="fg"><label>Fach</label><select id="f-subj">${SUBJECTS.map(s=>`<option ${editingEntry&&editingEntry.subj===s?"selected":""}>${s}</option>`).join("")}</select></div>
         <div class="fg"><label>Art</label><select id="f-type">${TYPES[cat].map(t=>`<option ${editingEntry&&editingEntry.type===t?"selected":""}>${t}</option>`).join("")}</select></div>
         <div class="fg"><label>Datum</label><input type="text" id="f-date" placeholder="z.B. 15.01.2026" value="${editingEntry?(editingEntry.date||""):""}"></div>
-        <div class="fg"><label>Punkte (0–15)</label><input type="number" id="f-score" min="0" max="15" placeholder="0–15" value="${editingEntry&&editingEntry.score!==null&&editingEntry.score!==""?editingEntry.score:""}"></div>
+        <div class="fg"><label>${mittel?"Schulnote (1–6)":"Punkte (0–15)"}</label><input type="number" id="f-score" min="${mittel?1:0}" max="${mittel?6:15}" placeholder="${mittel?"1–6":"0–15"}" value="${editingEntry&&editingEntry.score!==null&&editingEntry.score!==""?(mittel?punkteZuSchulnote(editingEntry.score):editingEntry.score):""}"></div>
         <div class="fg"><label>Bemerkung</label><input type="text" id="f-note" placeholder="Optional..." value="${editingEntry?(editingEntry.note||""):""}"></div>
       </div>
       <div class="form-footer">
@@ -681,7 +689,7 @@ function renderCategory(cat){
   }
 
   h+=`<div class="table-card"><table><thead><tr>
-    <th>Fach</th><th>Art</th><th>Datum</th><th>Punkte</th><th>Note</th><th>Bemerkung</th><th></th>
+    <th>Fach</th><th>Art</th><th>Datum</th><th>${mittel?"Note":"Punkte"}</th><th>${mittel?"Bewertung":"Note"}</th><th>Bemerkung</th><th></th>
   </tr></thead><tbody>`;
   if(!entries.length){
     h+=`<tr><td colspan="7"><div class="empty-state"><p>Noch keine Einträge für dieses Semester.</p></div></td></tr>`;
@@ -691,12 +699,14 @@ function renderCategory(cat){
       const c=scoreColor(e.score);
       const dt=parseGermanDate(e.date);
       const overdueRow=isK&&dt&&dt<todayMidnight()&&isEmptyScore(e.score);
+      const hasScore=e.score!==null&&e.score!=="";
+      const schulnote=hasScore?punkteZuSchulnote(e.score):null;
       h+=`<tr ${overdueRow?'style="background:var(--red-bg)"':""}>
         <td class="subj">${e.subj}</td>
         <td class="muted">${e.type}</td>
         <td class="muted">${e.date||"—"}${overdueRow?' <span title="Klausur war bereits, Note fehlt" style="color:var(--red-fg);font-weight:700">⚠</span>':""}</td>
-        <td><span class="badge" style="background:${c.bg};color:${c.fg};border-color:${c.bd}">${e.score!==null&&e.score!==""?e.score:"—"}</span></td>
-        <td class="note-name" style="color:${c.fg}">${e.score!==null&&e.score!==""?scoreLabel(e.score):"—"}</td>
+        <td><span class="badge" style="background:${c.bg};color:${c.fg};border-color:${c.bd}">${hasScore?(mittel?schulnote:e.score):"—"}</span></td>
+        <td class="note-name" style="color:${c.fg}">${hasScore?(mittel?schulnoteLabel(schulnote):scoreLabel(e.score)):"—"}</td>
         <td class="muted" style="font-size:12px">${e.note||""}</td>
         <td>
           ${pendingDelete&&pendingDelete.kind==="entry"&&pendingDelete.cat===cat&&pendingDelete.idx===idx
@@ -1073,6 +1083,26 @@ function punkteZuSchulnote(p){
 function schulnoteLabel(n){
   return {1:"sehr gut",2:"gut",3:"befriedigend",4:"ausreichend",5:"mangelhaft",6:"ungenügend"}[n]||"—";
 }
+/* Umgekehrte Richtung für den Mittelstufen-Modus: Nutzer tragen dort Schulnoten (1-6) statt
+ * Notenpunkten ein, intern wird weiterhin mit den 0-15-Punkte-Werten gerechnet (dieselbe
+ * Datenstruktur wie im Rest der App), damit Statistik/Export/Farben unverändert funktionieren.
+ * Jede Schulnote wird auf einen repräsentativen Punktwert aus der Mitte ihres Bereichs abgebildet. */
+function schulnoteZuPunkte(n){
+  return {1:14,2:11,3:8,4:5,5:2,6:0}[n] ?? null;
+}
+function isMittelstufe(){ return !!(CONFIG&&CONFIG.mittelstufeModuleEnabled); }
+/* Liest ein Noten-Eingabefeld abhängig vom aktiven Modus: im Mittelstufen-Modus wird der
+ * eingegebene Wert (1-6) als Schulnote interpretiert und in den internen Punktwert umgerechnet,
+ * sonst wird der Wert direkt als Punkte (0-15) übernommen. */
+function parseScoreInput(raw){
+  if(raw===""||raw===null||raw===undefined) return null;
+  const n=Number(raw);
+  if(isNaN(n)) return null;
+  if(isMittelstufe()){
+    return schulnoteZuPunkte(Math.min(6,Math.max(1,Math.round(n))));
+  }
+  return Math.min(15,Math.max(0,n));
+}
 
 function renderAbi(){
   // Alle Fach/Halbjahr-Kombinationen sammeln
@@ -1265,9 +1295,9 @@ function renderMittelstufe(){
   </div>`;
 
   h+=`<div class="ov-table"><table>
-    <thead><tr><th>Fach</th><th>Ø Punkte</th><th>Schulnote</th></tr></thead>
+    <thead><tr><th>Fach</th><th>Schulnote</th></tr></thead>
     <tbody>
-      ${rows.map(r=>`<tr><td class="subj">${r.subj}</td><td>${r.avgPunkte!==null?r.avgPunkte.toFixed(1):"—"}</td><td>${r.note!==null?`<strong>${r.note}</strong> <span class="muted">(${schulnoteLabel(r.note)})</span>`:"—"}</td></tr>`).join("")}
+      ${rows.map(r=>`<tr><td class="subj">${r.subj}</td><td>${r.note!==null?`<strong>${r.note}</strong> <span class="muted">(${schulnoteLabel(r.note)})</span>`:"—"}</td></tr>`).join("")}
     </tbody>
   </table></div>`;
 
@@ -1833,8 +1863,7 @@ async function handleImportFile(input){
 
 async function addEntry(cat){
   const g=id=>document.getElementById(id).value;
-  const scoreRaw=g("f-score");
-  const score=scoreRaw===""?null:Math.min(15,Math.max(0,Number(scoreRaw)));
+  const score=parseScoreInput(g("f-score"));
   data[cat].push({subj:g("f-subj"),type:g("f-type"),date:g("f-date").trim(),score,note:g("f-note").trim(),sem:activeSem});
   await saveData();
   render();
@@ -1856,11 +1885,12 @@ async function addBulkEntries(cat){
     if(!scoreEl) return;
     const raw=scoreEl.value;
     if(raw===""||raw===null) return;
-    const score=Math.min(15,Math.max(0,Number(raw)));
+    const score=parseScoreInput(raw);
+    if(score===null) return;
     data[cat].push({subj,type,date,score,note:noteEl?noteEl.value.trim():"",sem:activeSem});
     added++;
   });
-  if(added===0){ showToast("Bitte für mindestens ein Fach Punkte eintragen."); return; }
+  if(added===0){ showToast(isMittelstufe()?"Bitte für mindestens ein Fach eine Note eintragen.":"Bitte für mindestens ein Fach Punkte eintragen."); return; }
   bulkMode=false;
   await saveData();
   render();
@@ -1892,8 +1922,7 @@ function cancelEdit(){
 }
 async function saveEditEntry(cat){
   const g=id=>document.getElementById(id).value;
-  const scoreRaw=g("f-score");
-  const score=scoreRaw===""?null:Math.min(15,Math.max(0,Number(scoreRaw)));
+  const score=parseScoreInput(g("f-score"));
   const idx=editState.idx;
   const original=data[cat][idx];
   data[cat][idx]={subj:g("f-subj"),type:g("f-type"),date:g("f-date").trim(),score,note:g("f-note").trim(),sem:original.sem};

@@ -50,7 +50,7 @@ Wenn dich dieses Modell nicht betrifft (andere Schulform, oder du willst einfach
 
 ## Der Mittelstufen-Modus
 
-Alternative zum Abitur/Fachabi-Modul für Haupt-/Realschule oder die Mittelstufe allgemein, ebenfalls standardmäßig deaktiviert. Du trägst deine Noten weiterhin als Punkte (0–15) ein wie im Rest der App; das Modul rechnet daraus pro Fach eine Schulnote (1–6, nach der bundesweit einheitlichen Umrechnungstabelle) sowie einen Zeugnisdurchschnitt und zeigt eine grobe Versetzungs-Einschätzung (basierend auf der verbreiteten Daumenregel "1× mangelhaft meist unproblematisch, 2× nur mit Ausgleich, 1× ungenügend oder 3×+ mangelhaft gefährdet"). Auch hier gilt: die echten Versetzungsordnungen unterscheiden sich nach Bundesland und Schulform — das Modul ersetzt keine verbindliche Auskunft deiner Schule.
+Alternative zum Abitur/Fachabi-Modul für Haupt-/Realschule oder die Mittelstufe allgemein, ebenfalls standardmäßig deaktiviert. Ist er aktiv, trägst du Noten direkt als Schulnote (1–6) ein statt als Notenpunkte (0–15) — intern wird daraus weiterhin ein Punktwert berechnet (für Statistik, Export und Farben), das bekommst du beim Eintragen aber nicht mehr zu sehen. Das Modul zeigt pro Fach die Schulnote sowie einen Zeugnisdurchschnitt und eine grobe Versetzungs-Einschätzung (basierend auf der verbreiteten Daumenregel "1× mangelhaft meist unproblematisch, 2× nur mit Ausgleich, 1× ungenügend oder 3×+ mangelhaft gefährdet"). Auch hier gilt: die echten Versetzungsordnungen unterscheiden sich nach Bundesland und Schulform — das Modul ersetzt keine verbindliche Auskunft deiner Schule.
 
 ## Technik
 
