@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notenkompass</title>
+<meta name="description" content="Frei konfigurierbares Noten-Tracking-Tool, läuft komplett lokal im Browser.">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>🧭 Notenkompass</h1>
+      <p>Frei konfigurierbares Noten-Tracking · lokal im Browser</p>
+    </div>
+    <nav class="sidebar-nav" id="sidebar-nav-items">
+      <!-- wird dynamisch von renderSidebarNav() befüllt -->
+    </nav>
+    <div class="sem-section">
+      <div class="sem-label">Halbjahr</div>
+      <div id="sem-section-items">
+        <!-- wird dynamisch von renderSidebarPeriods() befüllt -->
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title" id="topbar-title">Übersicht</div>
+      <div style="display:flex;align-items:center;gap:10px" id="topbar-actions">
+        <span id="sync-status" style="font-size:11px;color:var(--text-muted)"></span>
+        <button class="theme-toggle" id="pdf-export-btn" onclick="openExportModal()">📄 PDF</button>
+        <button class="theme-toggle" id="theme-toggle-btn" onclick="toggleTheme()">🌙 Dunkel</button>
+        <div class="topbar-sem" id="topbar-sem"></div>
+      </div>
+    </div>
+    <div class="content" id="content"></div>
+  </main>
+</div>
+<div id="export-modal-root"></div>
+<div id="print-export-root"></div>
+<div id="setup-wizard-root" style="display:none"></div>
+<input type="file" id="import-file-input" accept="application/json" style="display:none" onchange="handleImportFile(this)">
+
+<script src="js/storage.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
