@@ -14,13 +14,45 @@ const TAB_TITLES = {overview:"Übersicht",klausuren:"Klausuren",muendlich:"Münd
 
 /* ======================= Konfiguration (Perioden, Module) ======================= */
 // CONFIG wird beim ersten Start über den Einrichtungsassistenten erzeugt (siehe setup.js-Abschnitt unten).
-let CONFIG = null; // {version, periods:[{id,label}], abiturModuleEnabled, abiturModule:{lkDoubleFromIndex, fachabiPeriodsCount}}
+let CONFIG = null; // {version, periods:[{id,label}], abiturModuleEnabled, abiturModule:{bundesland, lkDoubleFromIndex, fachabiPeriodsCount, numLK, numPruefungsfaecher}}
+
+/*
+ * Bundesland-Voreinstellungen für die Abitur-Gesamtqualifikation (Block I/II nach KMK-Modell).
+ * WICHTIG: Dieses Tool rechnet ein VEREINFACHTES Modell (Durchschnitt aller eingetragenen Noten,
+ * LK doppelt gewichtet, keine Modellierung der exakten Einbringungspflicht/Kurswahl). Die Werte
+ * numLK (Anzahl Leistungskurse/-fächer) und numPruefungsfaecher (Anzahl Abiturprüfungsfächer in
+ * Block II) bestimmen die Gewichtung und sind die Haupt-Stellschrauben, in denen sich die Bundes-
+ * länder unterscheiden. Die Zahlen wurden anhand öffentlich zugänglicher Quellen (Kultusministerien,
+ * Schul-Informationsblätter, Stand 2025/26) recherchiert; die Vertrauenseinschätzung (confidence)
+ * zeigt an, wie gut die jeweilige Quelle abgesichert war. Bitte im Zweifel mit deiner Schule/
+ * Oberstufenberatung abgleichen — Verordnungen ändern sich und können von Schule zu Schule in
+ * Detailfragen abweichen.
+ */
+const BUNDESLAND_PRESETS = {
+  BW: {name:"Baden-Württemberg", numLK:3, numPruefungsfaecher:5, confidence:"mittel", note:"3 Leistungsfächer (statt 2), davon zählen 2 doppelt. Seminarkurs als mögliche 5. Prüfungskomponente."},
+  BY: {name:"Bayern", numLK:2, numPruefungsfaecher:5, confidence:"hoch", note:"Fächerkatalog-basiertes System mit W-/P-Seminar statt klassischer LK-Logik; hier als 2 LK angenähert."},
+  BE: {name:"Berlin", numLK:2, numPruefungsfaecher:5, confidence:"mittel", note:"5. Prüfungskomponente (Präsentationsprüfung/BLL) ist verpflichtend."},
+  BB: {name:"Brandenburg", numLK:2, numPruefungsfaecher:4, confidence:"mittel", note:"Block-II-Gewichtung nicht vollständig verifiziert, Standardannahme (5-fach) übernommen."},
+  HB: {name:"Bremen", numLK:2, numPruefungsfaecher:4, confidence:"mittel", note:"LK der ersten 3 Halbjahre zählen doppelt (Sonderregel, hier vereinfacht wie 'ab Beginn' behandelt)."},
+  HH: {name:"Hamburg", numLK:3, numPruefungsfaecher:4, confidence:"mittel", note:"Profiloberstufe ohne klassisches LK-System; 3 doppelt gewertete Fächer hier als 'LK' angenähert."},
+  HE: {name:"Hessen", numLK:2, numPruefungsfaecher:5, confidence:"hoch", note:"Ursprungsmodell dieser App."},
+  MV: {name:"Mecklenburg-Vorpommern", numLK:2, numPruefungsfaecher:5, confidence:"mittel-hoch", note:""},
+  NI: {name:"Niedersachsen", numLK:3, numPruefungsfaecher:5, confidence:"hoch", note:"3 Prüfungsfächer auf erhöhtem Niveau zählen doppelt (statt klassischer 2-LK-Logik)."},
+  NW: {name:"Nordrhein-Westfalen", numLK:2, numPruefungsfaecher:4, confidence:"hoch", note:""},
+  RP: {name:"Rheinland-Pfalz", numLK:3, numPruefungsfaecher:4, confidence:"hoch", note:"3 Leistungsfächer (statt 2), davon zählen 2 doppelt."},
+  SL: {name:"Saarland", numLK:2, numPruefungsfaecher:5, confidence:"niedrig", note:"Quellenlage unklar — Standardwerte (analog Hessen) angenommen, bitte unbedingt mit Schule abgleichen."},
+  SN: {name:"Sachsen", numLK:2, numPruefungsfaecher:5, confidence:"mittel-hoch", note:""},
+  ST: {name:"Sachsen-Anhalt", numLK:2, numPruefungsfaecher:5, confidence:"mittel-hoch", note:"Kein klassisches LK-Label, sondern 2 wählbare Fächer mit doppelter Gewichtung."},
+  SH: {name:"Schleswig-Holstein", numLK:3, numPruefungsfaecher:5, confidence:"hoch", note:"3 Kernfächer auf erhöhtem Niveau statt klassischer 2-LK-Logik; 4 oder 5 Prüfungsfächer möglich."},
+  TH: {name:"Thüringen", numLK:2, numPruefungsfaecher:5, confidence:"mittel-hoch", note:"Verpflichtendes Seminarfach, kann 5. Prüfungskomponente sein."},
+  custom: {name:"Benutzerdefiniert", numLK:2, numPruefungsfaecher:5, confidence:"", note:"Stelle Anzahl Leistungskurse und Prüfungsfächer selbst ein."}
+};
 function defaultConfig(){
   return {
     version: 1,
     periods: [{id:"p1",label:"Periode 1"},{id:"p2",label:"Periode 2"}],
     abiturModuleEnabled: false,
-    abiturModule: { lkDoubleFromIndex: 2, fachabiPeriodsCount: 2 }
+    abiturModule: { bundesland:"HE", lkDoubleFromIndex: 2, fachabiPeriodsCount: 2, numLK: 2, numPruefungsfaecher: 5 }
   };
 }
 function applyConfig(cfg){
@@ -56,6 +88,44 @@ function isDoubleWeightPeriod(sem){
 function fachabiPeriods(){
   const n=(CONFIG&&CONFIG.abiturModule&&CONFIG.abiturModule.fachabiPeriodsCount)||2;
   return SEMESTERS.slice(0, n);
+}
+function resizeBlock2(newCount){
+  const cur=abiSettings.block2;
+  if(newCount>cur.length){
+    for(let i=cur.length;i<newCount;i++) cur.push({fach:"",punkte:""});
+  } else if(newCount<cur.length){
+    abiSettings.block2=cur.slice(0,newCount);
+  }
+}
+async function setBundesland(code){
+  const preset=BUNDESLAND_PRESETS[code];
+  if(!preset) return;
+  CONFIG.abiturModule.bundesland=code;
+  if(code!=="custom"){
+    CONFIG.abiturModule.numLK=preset.numLK;
+    CONFIG.abiturModule.numPruefungsfaecher=preset.numPruefungsfaecher;
+  }
+  if(abiSettings.lk.length>CONFIG.abiturModule.numLK) abiSettings.lk=abiSettings.lk.slice(0,CONFIG.abiturModule.numLK);
+  resizeBlock2(CONFIG.abiturModule.numPruefungsfaecher);
+  await saveConfig();
+  await saveAbiSettings();
+  render();
+}
+async function setNumLK(val){
+  const n=Math.max(2,Math.min(4,Number(val)||2));
+  CONFIG.abiturModule.numLK=n;
+  if(abiSettings.lk.length>n) abiSettings.lk=abiSettings.lk.slice(0,n);
+  await saveConfig();
+  await saveAbiSettings();
+  render();
+}
+async function setNumPruefungsfaecher(val){
+  const n=Math.max(4,Math.min(6,Number(val)||5));
+  CONFIG.abiturModule.numPruefungsfaecher=n;
+  resizeBlock2(n);
+  await saveConfig();
+  await saveAbiSettings();
+  render();
 }
 
 let activeTab = "overview";
@@ -548,10 +618,11 @@ async function saveAbiSettings(){
 
 async function setAbiZiel(z){ abiSettings.ziel=z; await saveAbiSettings(); render(); }
 async function toggleLK(subj){
+  const maxLK=(CONFIG&&CONFIG.abiturModule&&CONFIG.abiturModule.numLK)||2;
   const i=abiSettings.lk.indexOf(subj);
   if(i>=0){ abiSettings.lk.splice(i,1); }
   else{
-    if(abiSettings.lk.length>=2){ showToast("Du kannst maximal 2 Leistungskurse auswählen."); return; }
+    if(abiSettings.lk.length>=maxLK){ showToast("Du kannst maximal "+maxLK+" Leistungskurse auswählen."); return; }
     abiSettings.lk.push(subj);
   }
   await saveAbiSettings(); render();
@@ -611,10 +682,12 @@ function computeBlockI(avgFn){
   return {blockI,gkAvg,lkAvg,count:gkVals.length+lkVals.length};
 }
 function computeBlockII(){
+  const numFaecher=(CONFIG&&CONFIG.abiturModule&&CONFIG.abiturModule.numPruefungsfaecher)||abiSettings.block2.length||5;
+  const weightFactor=20/numFaecher; // insgesamt immer 20 Wertungseinheiten -> max. 300 Punkte, unabhängig von der Fächerzahl
   const filled=abiSettings.block2.filter(p=>p.punkte!==""&&p.punkte!==null&&p.punkte!==undefined&&!isNaN(Number(p.punkte)));
   if(!filled.length) return {blockII:null,count:0};
-  const sum=filled.reduce((a,p)=>a+Math.min(15,Math.max(0,Number(p.punkte)))*4,0);
-  return {blockII:sum,count:filled.length};
+  const sum=filled.reduce((a,p)=>a+Math.min(15,Math.max(0,Number(p.punkte)))*weightFactor,0);
+  return {blockII:Math.round(sum),count:filled.length};
 }
 
 /* ======================= Statistik-Toolkit ======================= */
@@ -967,12 +1040,13 @@ function renderAbi(){
     </div>`;
 
   if(abiSettings.ziel==="abitur"||abiSettings.ziel==="beide"){
+    const maxLK=(CONFIG.abiturModule.numLK)||2;
     h+=`<div style="margin-top:6px">
-      <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">Leistungskurse (max. 2, für Abitur-Hochrechnung)</label>
+      <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">Leistungskurse (max. ${maxLK}, für Abitur-Hochrechnung)</label>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
         ${SUBJECTS.map(s=>`<button class="btn ${abiSettings.lk.includes(s)?"btn-primary":""}" style="padding:6px 14px;font-size:12px" onclick="toggleLK('${s}')">${s}</button>`).join("")}
       </div>
-      <p style="font-size:11px;color:var(--text-muted);margin-top:8px">${abiSettings.lk.length===2?"LK gewählt: "+abiSettings.lk.join(" & ")+" — doppelte Gewichtung gilt erst ab "+(SEM_LABELS[SEMESTERS[CONFIG.abiturModule.lkDoubleFromIndex]]||"der konfigurierten Periode")+" (davor zählen sie einfach, wie ein GK).":"Noch keine 2 LK gewählt — bis dahin wird mit einheitlicher Gewichtung (kein LK-Bonus) gerechnet."}</p>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:8px">${abiSettings.lk.length===maxLK?"LK gewählt: "+abiSettings.lk.join(" & ")+" — doppelte Gewichtung gilt erst ab "+(SEM_LABELS[SEMESTERS[CONFIG.abiturModule.lkDoubleFromIndex]]||"der konfigurierten Periode")+" (davor zählen sie einfach, wie ein GK).":"Noch nicht alle "+maxLK+" LK gewählt — bis dahin wird mit einheitlicher Gewichtung (kein LK-Bonus) gerechnet."}</p>
     </div>
 
     <div style="margin-top:18px">
@@ -999,7 +1073,7 @@ function renderAbi(){
     h+=`<div class="section-head">Abitur-Hochrechnung${scenarioMode?` <span style="color:var(--gold-light);background:var(--navy-mid);padding:2px 8px;border-radius:10px;font-size:10px;letter-spacing:0;text-transform:none;vertical-align:middle">inkl. Szenario</span>`:""}</div>
     <div class="metrics">
       <div class="metric"><div class="metric-label">Block I (Qualifikationsphase, max. 600)</div><div class="metric-value">${bi.blockI!==null?bi.blockI:"—"}</div></div>
-      <div class="metric"><div class="metric-label">Block II (Abiturprüfung, max. 300)</div><div class="metric-value">${bii.blockII!==null?bii.blockII:"—"} <span style="font-size:11px;color:var(--text-muted)">(${bii.count}/5 eingetragen)</span></div></div>
+      <div class="metric"><div class="metric-label">Block II (Abiturprüfung, max. 300)</div><div class="metric-value">${bii.blockII!==null?bii.blockII:"—"} <span style="font-size:11px;color:var(--text-muted)">(${bii.count}/${CONFIG.abiturModule.numPruefungsfaecher||abiSettings.block2.length} eingetragen)</span></div></div>
       <div class="metric"><div class="metric-label">Gesamtpunktzahl (max. 900)</div><div class="metric-value">${gesamt!==null?gesamt:"—"}</div></div>
       <div class="metric"><div class="metric-label">Voraussichtliche Note</div><div class="metric-value" style="color:${note!==null?scoreColor(note<=2.5?13:note<=4?9:2).fg:"var(--text)"}">${note!==null?note.toFixed(1):"—"}</div></div>
     </div>
@@ -1295,18 +1369,26 @@ function renderFaecher(){
   <p style="font-size:11px;color:var(--text-muted);margin:-12px 0 20px">Du kannst beliebig viele Halbjahre/Perioden anlegen und frei benennen. Entfernst du ein Halbjahr, bleiben bereits eingetragene Noten dazu erhalten, erscheinen aber nicht mehr in Tabellen und Auswertungen.</p>`;
 
   /* ======================= Abitur/Fachabi-Modul ======================= */
-  h+=`<div class="section-head">Abitur/Fachabi-Modul (Hessen)</div>
+  const bl=BUNDESLAND_PRESETS[CONFIG.abiturModule.bundesland]||BUNDESLAND_PRESETS.custom;
+  h+=`<div class="section-head">Abitur/Fachabi-Modul</div>
   <div class="form-section">
     <p style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:12px">
-      Optionales Zusatzmodul für die hessische Oberstufe: errechnet Block I/II, Gesamtpunktzahl und Note nach den
-      Hessen-Abitur-Regeln (Leistungskurse zählen ab einem wählbaren Halbjahr doppelt). Für alle anderen Schulformen
-      oder Bundesländer lässt du es am besten deaktiviert — der Rest der App funktioniert unabhängig davon.
+      Optionales Zusatzmodul für die gymnasiale Oberstufe: errechnet Block I/II, Gesamtpunktzahl und Note nach dem
+      bundesweiten KMK-Modell (300–900 Punkte). <strong>Wichtig:</strong> dieses Tool rechnet ein vereinfachtes Modell
+      (Durchschnitt aller eingetragenen Noten, Leistungskurse doppelt gewichtet) — es bildet NICHT die exakte
+      Einbringungspflicht (Auswahl einzelner Kurse) jedes Bundeslands nach. Für alle anderen Schulformen lässt du es
+      am besten deaktiviert — der Rest der App funktioniert unabhängig davon.
     </p>
     <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;margin-bottom:${CONFIG.abiturModuleEnabled?"14px":"0"}">
       <input type="checkbox" ${CONFIG.abiturModuleEnabled?"checked":""} onchange="toggleAbiturModule()"> Abitur/Fachabi-Modul aktivieren
     </label>`;
   if(CONFIG.abiturModuleEnabled){
     h+=`<div class="form-grid">
+      <div class="fg"><label>Bundesland</label>
+        <select onchange="setBundesland(this.value)">
+          ${Object.keys(BUNDESLAND_PRESETS).map(code=>`<option value="${code}" ${CONFIG.abiturModule.bundesland===code?"selected":""}>${BUNDESLAND_PRESETS[code].name}</option>`).join("")}
+        </select>
+      </div>
       <div class="fg"><label>Leistungskurse zählen doppelt ab Halbjahr…</label>
         <select onchange="setLkDoubleFromIndex(this.value)">
           ${SEMESTERS.map((sem,i)=>`<option value="${i}" ${CONFIG.abiturModule.lkDoubleFromIndex===i?"selected":""}>${SEM_LABELS[sem]}</option>`).join("")}
@@ -1316,8 +1398,26 @@ function renderFaecher(){
         <select onchange="setFachabiPeriodsCount(this.value)">
           ${SEMESTERS.map((sem,i)=>`<option value="${i+1}" ${(CONFIG.abiturModule.fachabiPeriodsCount===(i+1))?"selected":""}>${i+1}</option>`).join("")}
         </select>
+      </div>`;
+    if(CONFIG.abiturModule.bundesland==="custom"){
+      h+=`<div class="fg"><label>Anzahl Leistungskurse</label>
+        <select onchange="setNumLK(this.value)">
+          ${[2,3,4].map(n=>`<option value="${n}" ${CONFIG.abiturModule.numLK===n?"selected":""}>${n}</option>`).join("")}
+        </select>
       </div>
-    </div>`;
+      <div class="fg"><label>Anzahl Abiturprüfungsfächer (Block II)</label>
+        <select onchange="setNumPruefungsfaecher(this.value)">
+          ${[4,5,6].map(n=>`<option value="${n}" ${CONFIG.abiturModule.numPruefungsfaecher===n?"selected":""}>${n}</option>`).join("")}
+        </select>
+      </div>`;
+    }
+    h+=`</div>`;
+    if(bl.note||bl.confidence){
+      h+=`<p style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.6">
+        ${bl.confidence?`<strong>Datenqualität: ${bl.confidence}.</strong> `:""}${bl.note||""}
+        ${bl.confidence==="niedrig"?" Bitte unbedingt mit deiner Schule/Oberstufenberatung abgleichen, bevor du dich darauf verlässt.":""}
+      </p>`;
+    }
   }
   h+=`</div>`;
 
@@ -1978,7 +2078,7 @@ Englisch
       </div>
 
       <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;margin-top:18px">
-        <input type="checkbox" id="setup-abitur-module" ${prevAbiturOn?"checked":""}> Abitur/Fachabi-Modul (Hessen) aktivieren — optional, berechnet Block I/II nach den hessischen Abitur-Regeln
+        <input type="checkbox" id="setup-abitur-module" ${prevAbiturOn?"checked":""}> Abitur/Fachabi-Modul aktivieren — optional, berechnet Block I/II nach dem bundesweiten Gesamtqualifikations-Modell (Bundesland wählst du danach in den Einstellungen)
       </label>
 
       <div id="setup-error"></div>
@@ -2050,6 +2150,7 @@ async function init(){
     runSetupWizard();
     return;
   }
+  if(CONFIG&&CONFIG.abiturModule&&CONFIG.abiturModule.numPruefungsfaecher) resizeBlock2(CONFIG.abiturModule.numPruefungsfaecher);
   render();
 }
 init();

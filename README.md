@@ -2,7 +2,7 @@
 
 Ein freies, werbe- und trackingfreies Noten-Tracking-Tool, das komplett im Browser läuft. Keine Anmeldung, kein Server, keine Cloud — alle Daten bleiben lokal auf deinem Gerät.
 
-Notenkompass wurde ursprünglich für die Hessen-Abitur-Oberstufe (Abendschule) gebaut, ist aber bewusst neutral gehalten: Fächer, Halbjahre/Perioden und sogar das Notensystem lassen sich frei konfigurieren. Das Hessen-Abitur-spezifische Berechnungsmodell (Block I/II, Leistungskurs-Gewichtung) ist ein optionales Modul, das du ein- oder ausschalten kannst.
+Notenkompass wurde ursprünglich für die Hessen-Abitur-Oberstufe (Abendschule) gebaut, ist aber bewusst neutral gehalten: Fächer, Halbjahre/Perioden und sogar das Notensystem lassen sich frei konfigurieren. Das Abitur-Berechnungsmodell (Block I/II, Leistungskurs-Gewichtung) ist ein optionales Modul mit Voreinstellungen für alle 16 Bundesländer, das du ein- oder ausschalten kannst.
 
 ## Features
 
@@ -10,7 +10,7 @@ Notenkompass wurde ursprünglich für die Hessen-Abitur-Oberstufe (Abendschule) 
 - **Noten erfassen**: Klausuren, mündliche Noten, sonstige Leistungen – mit Punkten (0–15), Datum und Notiz
 - **Übersicht & Auswertung**: Durchschnitte je Fach und Halbjahr, Trends, Fortschrittsanzeigen
 - **Statistik-Werkzeuge**: Standardabweichung, Klausur-vs-Mündlich-Vergleich, Trendprognose (lineare Regression), Monte-Carlo-Simulation, Bootstrap-Konfidenzintervall, Korrelationsanalyse
-- **Optionales Abitur/Fachabi-Modul** (Hessen): Block-I/II-Hochrechnung, LK-Gewichtung, Grenznutzen-Analyse, Einbringungs-Optimierer
+- **Optionales Abitur/Fachabi-Modul** mit Voreinstellungen für alle 16 Bundesländer: Block-I/II-Hochrechnung, LK-Gewichtung, Grenznutzen-Analyse, Einbringungs-Optimierer
 - **PDF-Export**: wähle frei, was exportiert wird (automatisch generierter Analysebericht, Noten, Fächerübersicht, Statistik), gefiltert nach Halbjahr
 - **Datenportabilität**: Export/Import als JSON-Datei – nimm deine Daten mit auf ein anderes Gerät oder sichere sie
 - **Dark Mode**
@@ -35,9 +35,11 @@ Da alle Daten nur lokal im Browser gespeichert werden, gehen sie z.B. beim Lösc
 
 ## Das Abitur/Fachabi-Modul
 
-Standardmäßig ist dieses Modul deaktiviert. Es bildet das hessische Abitur-/Fachhochschulreife-Berechnungsmodell nach (Block I aus der Qualifikationsphase, Block II aus den Abiturprüfungen, doppelte Gewichtung der Leistungskurse ab einem konfigurierbaren Halbjahr). Es ist als **Orientierung** gedacht und ersetzt keine verbindliche Prüfung durch deine Schule bzw. Oberstufenberatung – die echten Einbringungs- und Ausgleichsregeln können je nach Schule/Bundesland abweichen.
+Standardmäßig ist dieses Modul deaktiviert. Aktiviert bildet es das bundesweite KMK-Gesamtqualifikationsmodell nach (Block I aus der Qualifikationsphase, max. 600 Punkte; Block II aus den Abiturprüfungen, max. 300 Punkte; Gesamt max. 900 Punkte, Note 1,0 ab 823 Punkten). In den Einstellungen wählst du dein **Bundesland** aus einer Liste aller 16 – das stellt automatisch die Anzahl der Leistungskurse/-fächer und Abiturprüfungsfächer passend ein (z.B. 2 LK/5 Prüfungsfächer in Hessen, 3 Leistungsfächer in Baden-Württemberg und Rheinland-Pfalz, 4 Prüfungsfächer in NRW). Eine "Benutzerdefiniert"-Option erlaubt es, diese Zahlen auch manuell zu setzen.
 
-Wenn dich dieses Modell nicht betrifft (anderes Bundesland, andere Schulform, oder du willst einfach nur Noten tracken), lass es einfach deaktiviert – der Rest der App funktioniert unabhängig davon.
+**Wichtige Einschränkung:** Das Tool rechnet ein **vereinfachtes Modell** – es bildet nicht die exakte Einbringungspflicht jedes Bundeslands nach (also *welche* einzelnen Kurse eingebracht werden müssen/dürfen), sondern nutzt den Durchschnitt aller eingetragenen Noten mit doppelter LK-Gewichtung. Die Bundesland-Parameter wurden anhand öffentlich zugänglicher Quellen (Kultusministerien, Schul-Informationsblätter, Stand 2025/26) recherchiert; die Datenqualität ist nicht für jedes Bundesland gleich gut abgesichert (wird in der App als Hinweis angezeigt, z.B. "Datenqualität: niedrig" für Saarland). Das Modul ist als **Orientierung** gedacht und ersetzt in keinem Bundesland eine verbindliche Prüfung durch deine Schule bzw. Oberstufenberatung – gleiche die Ergebnisse unbedingt ab, bevor du dich darauf verlässt.
+
+Wenn dich dieses Modell nicht betrifft (andere Schulform, oder du willst einfach nur Noten tracken), lass es einfach deaktiviert – der Rest der App funktioniert unabhängig davon.
 
 ## Technik
 
