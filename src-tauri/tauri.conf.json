@@ -5,8 +5,8 @@
   "identifier": "io.github.hamzo069.notenkompass",
   "build": {
     "frontendDist": "dist",
-    "beforeDevCommand": "node ../scripts/copy-web-assets.cjs",
-    "beforeBuildCommand": "node ../scripts/copy-web-assets.cjs"
+    "beforeDevCommand": "node scripts/copy-web-assets.cjs",
+    "beforeBuildCommand": "node scripts/copy-web-assets.cjs"
   },
   "app": {
     "windows": [
