@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "identifier": "io.github.hamzo069.notenkompass",
   "build": {
-    "frontendDist": ".."
+    "frontendDist": "dist",
+    "beforeDevCommand": "node ../scripts/copy-web-assets.cjs",
+    "beforeBuildCommand": "node ../scripts/copy-web-assets.cjs"
   },
   "app": {
     "windows": [

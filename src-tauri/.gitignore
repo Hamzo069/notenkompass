@@ -2,3 +2,6 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# Generiert von scripts/copy-web-assets.cjs vor jedem dev/build
+/dist/
