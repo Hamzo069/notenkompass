@@ -1227,6 +1227,12 @@ function setOptimizerMaxExclude(val){
 
 function renderFaecher(){
   let h=`<div class="form-section">
+    <div class="form-title">Einrichtung ändern</div>
+    <p style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:12px">Halbjahre, Fächer und das Abitur-Modul lassen sich unten einzeln anpassen. Wenn du stattdessen alles auf einmal neu durchgehen willst (z.B. weil die Anzahl Halbjahre nicht mehr passt), nutze den Einrichtungsassistenten erneut — bereits eingetragene Noten bleiben dabei erhalten.</p>
+    <div class="form-footer"><button class="btn" onclick="runSetupWizard(true)">🔄 Einrichtungsassistent erneut durchlaufen</button></div>
+  </div>
+
+  <div class="form-section">
     <div class="form-title">Neues Fach hinzufügen</div>
     <div class="form-grid">
       <div class="fg"><label>Fachname</label><input type="text" id="f-newsubj" placeholder="z.B. Chemie, Religion, Sport"></div>
@@ -1944,18 +1950,22 @@ function doExportPrint(selection,semesters){
   },100);
 }
 
-/* ======================= Einrichtungsassistent (Ersteinrichtung) ======================= */
-function runSetupWizard(){
+/* ======================= Einrichtungsassistent (Ersteinrichtung / erneut durchlaufen) ======================= */
+function runSetupWizard(isReentry){
+  isReentry=!!isReentry && !!(CONFIG&&SUBJECTS&&SUBJECTS.length);
+  const prevPeriodLabels=isReentry?SEMESTERS.map(sem=>SEM_LABELS[sem]):["Halbjahr 1","Halbjahr 2"];
+  const prevSubjects=isReentry?SUBJECTS:["Mathematik","Deutsch","Englisch"];
+  const prevAbiturOn=isReentry?!!CONFIG.abiturModuleEnabled:false;
   const root=document.getElementById("setup-wizard-root");
   root.style.display="flex";
   root.innerHTML=`<div class="setup-overlay">
     <div class="setup-box">
-      <h2>Willkommen bei Notenkompass 👋</h2>
-      <p class="setup-sub">Kurz einrichten, dann kann's losgehen. Fächer und Halbjahre lassen sich jederzeit in den Einstellungen anpassen.</p>
+      <h2>${isReentry?"Einrichtung anpassen 🔄":"Willkommen bei Notenkompass 👋"}</h2>
+      <p class="setup-sub">${isReentry?"Ändere Halbjahre und Fächer in einem Rutsch. Bereits eingetragene Noten gehen dabei nicht verloren — Fächer/Halbjahre, die du hier entfernst, bleiben in den Rohdaten erhalten und lassen sich später wieder mit demselben Namen sichtbar machen.":"Kurz einrichten, dann kann's losgehen. Fächer und Halbjahre lassen sich jederzeit in den Einstellungen anpassen."}</p>
 
       <div class="fg">
         <label>Wie viele Halbjahre/Perioden möchtest du erfassen?</label>
-        <input type="number" id="setup-period-count" min="1" max="12" value="2" onchange="renderSetupPeriodNames()" oninput="renderSetupPeriodNames()">
+        <input type="number" id="setup-period-count" min="1" max="12" value="${prevPeriodLabels.length}" onchange="renderSetupPeriodNames()" oninput="renderSetupPeriodNames()">
       </div>
       <div id="setup-period-names"></div>
 
@@ -1964,28 +1974,32 @@ function runSetupWizard(){
         <textarea id="setup-subjects" rows="6" placeholder="Mathematik
 Deutsch
 Englisch
-…">Mathematik
-Deutsch
-Englisch</textarea>
+…">${prevSubjects.join("\n")}</textarea>
       </div>
 
       <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;margin-top:18px">
-        <input type="checkbox" id="setup-abitur-module"> Abitur/Fachabi-Modul (Hessen) aktivieren — optional, berechnet Block I/II nach den hessischen Abitur-Regeln
+        <input type="checkbox" id="setup-abitur-module" ${prevAbiturOn?"checked":""}> Abitur/Fachabi-Modul (Hessen) aktivieren — optional, berechnet Block I/II nach den hessischen Abitur-Regeln
       </label>
 
       <div id="setup-error"></div>
       <div class="form-footer" style="margin-top:16px">
-        <button class="btn btn-primary" onclick="finishSetupWizard()">Los geht's 🚀</button>
+        ${isReentry?`<button class="btn" onclick="cancelSetupWizard()">Abbrechen</button>`:""}
+        <button class="btn btn-primary" onclick="finishSetupWizard(${isReentry})">${isReentry?"Übernehmen":"Los geht's 🚀"}</button>
       </div>
     </div>
   </div>`;
-  renderSetupPeriodNames();
+  renderSetupPeriodNames(prevPeriodLabels);
 }
-function renderSetupPeriodNames(){
+function cancelSetupWizard(){
+  const root=document.getElementById("setup-wizard-root");
+  root.style.display="none";
+  root.innerHTML="";
+}
+function renderSetupPeriodNames(prefill){
   const countInput=document.getElementById("setup-period-count");
   const count=Math.max(1,Math.min(12,Number(countInput.value)||1));
   const container=document.getElementById("setup-period-names");
-  const existing=[...container.querySelectorAll(".setup-period-name-input")].map(i=>i.value);
+  const existing=prefill||[...container.querySelectorAll(".setup-period-name-input")].map(i=>i.value);
   let html="";
   for(let i=0;i<count;i++){
     const val=(existing[i]!==undefined&&existing[i]!=="")?existing[i]:"Halbjahr "+(i+1);
@@ -1993,7 +2007,7 @@ function renderSetupPeriodNames(){
   }
   container.innerHTML=html;
 }
-async function finishSetupWizard(){
+async function finishSetupWizard(isReentry){
   const errEl=document.getElementById("setup-error");
   errEl.textContent="";
   const periodNames=[...document.querySelectorAll(".setup-period-name-input")].map(i=>i.value.trim()).filter(Boolean);
@@ -2003,19 +2017,26 @@ async function finishSetupWizard(){
   if(!periodNames.length){ errEl.textContent="Bitte mindestens ein Halbjahr benennen."; return; }
   if(!subjects.length){ errEl.textContent="Bitte mindestens ein Fach eingeben."; return; }
 
-  const cfg=defaultConfig();
+  const prevSlots=isReentry?KLAUSUR_SLOTS:{};
+  const prevLk=isReentry&&abiSettings?abiSettings.lk:[];
+
+  const cfg=isReentry?Object.assign({},CONFIG):defaultConfig();
   cfg.periods=periodNames.map((label,i)=>({id:"p"+(i+1),label}));
   cfg.abiturModuleEnabled=abiturOn;
   applyConfig(cfg);
   SUBJECTS=subjects;
-  KLAUSUR_SLOTS={};
-  subjects.forEach(s=>KLAUSUR_SLOTS[s]=2);
+  const newSlots={};
+  subjects.forEach(s=>newSlots[s]=prevSlots[s]!==undefined?prevSlots[s]:2);
+  KLAUSUR_SLOTS=newSlots;
+  if(isReentry&&abiSettings) abiSettings.lk=prevLk.filter(s=>subjects.includes(s));
   await saveConfig();
   await saveSubjects();
+  if(isReentry&&abiSettings) await saveAbiSettings();
 
   const root=document.getElementById("setup-wizard-root");
   root.style.display="none";
   root.innerHTML="";
+  showToast(isReentry?"Einrichtung aktualisiert.":"");
   render();
 }
 
