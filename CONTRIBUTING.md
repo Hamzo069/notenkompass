@@ -13,11 +13,19 @@ Danke für dein Interesse, zu Notenkompass beizutragen!
 
 Es gibt keinen Build-Schritt. Einfach `index.html` im Browser öffnen, oder z.B. mit `npx serve .` lokal servieren (für manche Browser-Features wie `fetch` auf lokale Dateien empfehlenswert).
 
+## Lokales Testen (vor dem PR)
+
+Bevor du einen Pull Request öffnest, prüfe deine Änderungen bitte lokal:
+
+1. **Syntax-Check:** Führe `node --check js/app.js` aus, um sicherzustellen, dass es keine Syntaxfehler gibt.
+2. **Manuelles Testen:** Öffne `index.html` im Browser und klicke die App manuell durch (Ersteinrichtung, Noten eintragen, PDF-Export testen).
+3. **Zukünftige Tests:** Wir planen, Playwright-Tests hinzuzufügen (siehe #15). Bis dahin ist manuelles Testen der Standard.
+
 ## Pull Requests
 
 1. Fork + Branch von `main`
 2. Änderung möglichst klein und fokussiert halten
-3. Vor dem PR: manuell durchklicken (Ersteinrichtung, ein paar Noten eintragen, PDF-Export testen) – es gibt aktuell keine automatisierten Tests
+3. Vor dem PR: `node --check js/app.js` ausführen und die App manuell testen (siehe oben)
 4. PR-Beschreibung: was wurde geändert und warum
 
 ## Issues
